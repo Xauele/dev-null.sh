@@ -52,6 +52,6 @@ final readonly class CommitProofController
             'ssh_signature' => $signature->toArmored(),
             'displayed_body' => $commit->body,
             'note' => 'The signed payload is the original CLI submission. Display text may be normalized or expand emoji shortcodes. GitHub key ownership was checked at submission time, not reverified now.',
-        ])->header('Cache-Control', 'public, max-age=300');
+        ])->header('Cache-Control', 'no-store');
     }
 }

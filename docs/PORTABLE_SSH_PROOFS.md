@@ -53,6 +53,7 @@ API key, or network access is needed to verify a saved receipt.
   and emoji processing, and may not match byte-for-byte.
 - A key later removed from GitHub does not invalidate an old signature.
 - A receipt for pending, rejected, deleted, or unsigned content returns 404.
+- Receipts are not stored in shared HTTP caches, because approved posts may later be deleted or rejected. Any proof previously saved by another person cannot be revoked.
 - The public key and signed payload are intentionally public for an approved
   post. User/account deletion erases stored proofs, including those that
   otherwise could survive in a reply tombstone.
