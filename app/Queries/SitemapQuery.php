@@ -62,7 +62,7 @@ final readonly class SitemapQuery
     /**
      * Fetch all images for the page with one query rather than one per commit.
      *
-     * @param list<string> $commitIds
+     * @param array<int, string> $commitIds
      * @return Collection<int, stdClass>
      */
     public function imagesFor(array $commitIds): Collection

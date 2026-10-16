@@ -21,6 +21,7 @@ final readonly class CommitSitemapController
         $commitUrl = route('commit.show', ['user' => '__sitemap_user__', 'commit' => '__sitemap_commit__']);
         $imageUrl = route('commit-image.show', '__sitemap_image__');
 
+        /** @var array<string, list<string>> $images */
         $images = [];
 
         foreach ($sitemaps->imagesFor($ids) as $image) {

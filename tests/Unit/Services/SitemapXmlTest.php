@@ -29,8 +29,8 @@ it('escapes XML special characters in locations and image URLs', function (): vo
     expect($document->loadXML($xml))->toBeTrue()
         ->and($xml)->toContain('one=1&amp;two=')
         ->toContain('size=2&amp;mode=wide')
-        ->and($document->getElementsByTagName('loc')->item(0)?->textContent)->toBe($url)
-        ->and($document->getElementsByTagName('loc')->item(1)?->textContent)->toBe($image)
+        ->and($document->getElementsByTagNameNS('http://www.sitemaps.org/schemas/sitemap/0.9', 'loc')->item(0)?->textContent)->toBe($url)
+        ->and($document->getElementsByTagNameNS('http://www.google.com/schemas/sitemap-image/1.1', 'loc')->item(0)?->textContent)->toBe($image)
         ->and($document->getElementsByTagName('lastmod')->item(0)?->textContent)->toBe('2026-10-16T16:00:00+00:00');
 });
 
@@ -44,5 +44,5 @@ it('includes multiple URLs without adding image nodes to URLs that have none', f
 
     expect($document->loadXML($xml))->toBeTrue()
         ->and($document->getElementsByTagName('url')->length)->toBe(2)
-        ->and($document->getElementsByTagName('image')->length)->toBe(1);
+        ->and($document->getElementsByTagNameNS('http://www.google.com/schemas/sitemap-image/1.1', 'image')->length)->toBe(1);
 });
