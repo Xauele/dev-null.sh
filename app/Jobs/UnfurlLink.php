@@ -6,16 +6,19 @@ namespace App\Jobs;
 
 use App\Actions\UpdateLinkPreview;
 use App\Models\LinkPreview;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Attributes\Backoff;
 use Illuminate\Queue\Attributes\DeleteWhenMissingModels;
 use Illuminate\Queue\Attributes\Tries;
+use Illuminate\Queue\Attributes\UniqueFor;
 
 #[Backoff([60, 600])]
 #[Tries(3)]
+#[UniqueFor(3600)]
 #[DeleteWhenMissingModels]
-final class UnfurlLink implements ShouldQueue
+final class UnfurlLink implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
@@ -25,7 +28,15 @@ final class UnfurlLink implements ShouldQueue
     }
 
     /**
-     * Commits that share a link may each queue this job before the first one runs, so only the first one fetches.
+     * Deduplicate queued and retrying jobs that refer to the same link preview.
+     */
+    public function uniqueId(): string
+    {
+        return $this->linkPreview->id;
+    }
+
+    /**
+     * Skip work when another job has fetched the preview already.
      */
     public function handle(UpdateLinkPreview $action): void
     {
