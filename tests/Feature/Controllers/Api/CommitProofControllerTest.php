@@ -111,6 +111,26 @@ it('does not assign signatures to unsigned web commits', function (): void {
     $this->getJson(route('api-commit-proof.show', $commit))->assertNotFound();
 });
 
+it('cannot forge an SSH-signed marker through the web composer', function (): void {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->post(route('commit.store'), [
+        'body' => 'Ordinary web commit',
+        'signed_key_fingerprint' => 'SHA256:attacker',
+        'verified_ssh_proof' => [
+            'payload' => 'not signed',
+            'signature' => 'not signed',
+            'public_key' => 'not signed',
+            'fingerprint' => 'SHA256:attacker',
+        ],
+    ])->assertRedirect();
+
+    $commit = $user->commits()->sole();
+
+    expect($commit->signer_fingerprint)->toBeNull()
+        ->and(DB::table('commit_signatures')->where('commit_id', $commit->id)->exists())->toBeFalse();
+});
+
 it('refuses to publish an invalid or altered SSH signature', function (): void {
     $signed = signedCommit($this->proofKeyPair, 'It was DNS.');
 
@@ -139,6 +159,26 @@ it('purges retained public keys and signed bytes when an author deletes their ac
     resolve(DeleteUser::class)->handle($this->proofUser);
 
     expect(DB::table('commit_signatures')->count())->toBe(0);
+});
+
+it('erases proof bytes even when a signed reply survives as an anonymous tombstone', function (): void {
+    $root = Commit::factory()->create();
+
+    submitPortableProof(signedCommit($this->proofKeyPair, 'My signed reply', replyTo: $root->id))->assertCreated();
+
+    $reply = $this->proofUser->commits()->sole();
+    $reply->forceFill(['status' => CommitStatus::Approved])->save();
+
+    Commit::factory()->for($reply, 'parent')->create();
+
+    resolve(DeleteUser::class)->handle($this->proofUser);
+
+    $tombstone = Commit::query()->withTrashed()->find($reply->id);
+
+    expect($tombstone)->not->toBeNull()
+        ->and($tombstone->user_id)->toBeNull()
+        ->and($tombstone->signer_fingerprint)->toBeNull()
+        ->and(DB::table('commit_signatures')->where('commit_id', $reply->id)->exists())->toBeFalse();
 });
 
 it('exports signatures as part of the author data export', function (): void {
