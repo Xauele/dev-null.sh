@@ -44,6 +44,24 @@ jobs:
       - name: Lint
         run: composer test:lint
 
+      # Temporary fork-only diagnostics; never pushes or updates GitHub.
+      - name: Print formatted Run Remix sources
+        if: always()
+        run: |
+          vp fmt resources/
+          for f in \
+            resources/js/components/code-block.tsx \
+            resources/js/components/commit-card.tsx \
+            resources/js/components/commit-thread.tsx \
+            resources/js/components/run-remix-panel.tsx \
+            resources/js/lib/run-remix-runner.ts \
+            resources/js/lib/run-remix.ts; do
+            echo "FORMAT_BEGIN:$f"
+            base64 -w0 "$f"
+            echo
+            echo "FORMAT_END:$f"
+          done
+
   types:
     runs-on: ubuntu-latest
     timeout-minutes: 10
