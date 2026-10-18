@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { diffRemix, remixReply } from '../../resources/js/lib/run-remix';
+import { diffRemix, remixReply } from '../../resources/js/lib/run-remix.ts';
 
 test('a remix is a regular PHP-fenced reply', () => {
     assert.equal(remixReply('c0ffee1', 'Better approach.', '<?php echo 42;'),
