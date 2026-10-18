@@ -4,7 +4,11 @@ import { toast } from 'sonner';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { cn } from '@/lib/utils';
 
-const RunRemixPanel = lazy(() => import('@/components/run-remix-panel').then((module) => ({ default: module.RunRemixPanel })));
+const RunRemixPanel = lazy(() =>
+    import('@/components/run-remix-panel').then((module) => ({
+        default: module.RunRemixPanel,
+    })),
+);
 
 export function CodeBlock({
     html,
@@ -25,7 +29,11 @@ export function CodeBlock({
     const [isWrapped, setIsWrapped] = useState(false);
     const [panelMode, setPanelMode] = useState<'run' | null>(null);
     const [sourceCode, setSourceCode] = useState('');
-    const canRemix = isCopyable && language?.toLowerCase() === 'php' && !!commitId && !!onRemix;
+    const canRemix =
+        isCopyable &&
+        language?.toLowerCase() === 'php' &&
+        !!commitId &&
+        !!onRemix;
 
     useEffect(() => {
         if (!isCopied) {
@@ -66,9 +74,20 @@ export function CodeBlock({
                     {isCopyable && (
                         <div className="flex shrink-0 items-center gap-0.5">
                             {canRemix && (
-                                <button type="button" onClick={() => { setSourceCode(codeRef.current?.textContent ?? ''); setPanelMode('run'); }}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSourceCode(
+                                            codeRef.current?.textContent ?? '',
+                                        );
+                                        setPanelMode('run');
+                                    }}
                                     className="rounded-md px-2 py-0.5 font-mono text-[11px] text-primary hover:bg-primary-soft"
-                                    aria-expanded={panelMode !== null} data-test="run-remix-open">Run & Remix</button>
+                                    aria-expanded={panelMode !== null}
+                                    data-test="run-remix-open"
+                                >
+                                    Run & Remix
+                                </button>
                             )}
                             <button
                                 type="button"
@@ -130,9 +149,21 @@ export function CodeBlock({
                 dangerouslySetInnerHTML={{ __html: html }}
             />
             {panelMode !== null && commitId && onRemix && (
-                <Suspense fallback={<div className="border-t p-3 text-xs text-muted-foreground">Loading PHP editor…</div>}>
-                    <RunRemixPanel key={commitId + sourceCode} commitId={commitId}
-                        initialCode={sourceCode} autoRun onRemix={onRemix} onClose={() => setPanelMode(null)} />
+                <Suspense
+                    fallback={
+                        <div className="border-t p-3 text-xs text-muted-foreground">
+                            Loading PHP editor…
+                        </div>
+                    }
+                >
+                    <RunRemixPanel
+                        key={commitId + sourceCode}
+                        commitId={commitId}
+                        initialCode={sourceCode}
+                        autoRun
+                        onRemix={onRemix}
+                        onClose={() => setPanelMode(null)}
+                    />
                 </Suspense>
             )}
         </div>

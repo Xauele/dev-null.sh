@@ -333,7 +333,11 @@ export function CommitCard({
                             )}
                             <FoldedCommitBody
                                 commitId={commit.id}
-                                onRemix={commit.replies_count === undefined ? undefined : beginRemix}
+                                onRemix={
+                                    commit.replies_count === undefined
+                                        ? undefined
+                                        : beginRemix
+                                }
                                 segments={commit.body_segments}
                                 mentions={commit.mentions}
                                 previewSegments={

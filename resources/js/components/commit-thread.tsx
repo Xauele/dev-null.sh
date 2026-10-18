@@ -58,8 +58,8 @@ import { useUser } from '@/hooks/use-user';
 import { signIn } from '@/lib/auth';
 import { maxBodyLength, minBodyLength } from '@/lib/commit';
 import { commitStateKey } from '@/lib/commit-state';
-import type { RemixDraft } from '@/lib/run-remix';
 import { hasModKey } from '@/lib/keyboard';
+import type { RemixDraft } from '@/lib/run-remix';
 import {
     characterCount,
     cn,
@@ -412,8 +412,14 @@ export function ThreadActions({
     const { commit } = thread;
     const hasStash = useHasStash(auth.user?.id ?? null, `reply-${commit.id}`);
     const hasReplyShortcut = hasKeyboardShortcuts && !thread.isReplying;
-    const cancelReply = () => { onClearRemix?.(); thread.cancelReply(); };
-    const onReplied = () => { onClearRemix?.(); thread.onReplied(); };
+    const cancelReply = () => {
+        onClearRemix?.();
+        thread.cancelReply();
+    };
+    const onReplied = () => {
+        onClearRemix?.();
+        thread.onReplied();
+    };
 
     return (
         <>
@@ -1154,12 +1160,32 @@ function ReplyComposer({
                 <ImageDropOverlay className="-inset-px" />
             )}
             {remixConflict !== null && (
-                <div role="alert" className="mb-2 flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-2 text-xs">
-                    <span className="mr-auto">You already have an unsent reply. Replace it with this remix?</span>
-                    <button type="button" className="rounded-md bg-foreground px-2 py-1 text-background"
-                        onClick={() => { updateBody(remixConflict); setRemixConflict(null); textareaRef.current?.focus(); }}>Use remix</button>
-                    <button type="button" className="rounded-md border px-2 py-1"
-                        onClick={() => setRemixConflict(null)}>Keep draft</button>
+                <div
+                    role="alert"
+                    className="mb-2 flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-2 text-xs"
+                >
+                    <span className="mr-auto">
+                        You already have an unsent reply. Replace it with this
+                        remix?
+                    </span>
+                    <button
+                        type="button"
+                        className="rounded-md bg-foreground px-2 py-1 text-background"
+                        onClick={() => {
+                            updateBody(remixConflict);
+                            setRemixConflict(null);
+                            textareaRef.current?.focus();
+                        }}
+                    >
+                        Use remix
+                    </button>
+                    <button
+                        type="button"
+                        className="rounded-md border px-2 py-1"
+                        onClick={() => setRemixConflict(null)}
+                    >
+                        Keep draft
+                    </button>
                 </div>
             )}
             <label htmlFor={`reply-${parent.id}`} className="sr-only">
