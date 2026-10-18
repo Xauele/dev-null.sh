@@ -11,11 +11,15 @@ export function CommitBody({
     mentions,
     className,
     isStatic = false,
+    commitId,
+    onRemix,
 }: {
     segments: BodySegment[];
     mentions: Commit['mentions'];
     className?: string;
     isStatic?: boolean;
+    commitId?: string;
+    onRemix?: (body: string) => void;
 }) {
     const { auth } = usePage().props;
 
@@ -54,6 +58,8 @@ export function CommitBody({
                                 html={segment.html}
                                 language={segment.language}
                                 isCopyable={!isStatic}
+                                commitId={commitId}
+                                onRemix={isStatic ? undefined : onRemix}
                             />
                         );
                 }
@@ -70,11 +76,15 @@ export function FoldedCommitBody({
     previewSegments,
     mentions,
     className,
+    commitId,
+    onRemix,
 }: {
     segments: BodySegment[];
     previewSegments: BodySegment[] | null;
     mentions: Commit['mentions'];
     className?: string;
+    commitId?: string;
+    onRemix?: (body: string) => void;
 }) {
     const [isUnfolded, setIsUnfolded] = useState(false);
     const bodyRef = useRef<HTMLDivElement>(null);
@@ -85,6 +95,8 @@ export function FoldedCommitBody({
                 segments={segments}
                 mentions={mentions}
                 className={className}
+                commitId={commitId}
+                onRemix={onRemix}
             />
         );
     }
@@ -111,6 +123,8 @@ export function FoldedCommitBody({
                 segments={isUnfolded ? segments : previewSegments}
                 mentions={mentions}
                 className={className}
+                commitId={commitId}
+                onRemix={onRemix}
             />
             {!isUnfolded && (
                 <button
