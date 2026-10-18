@@ -58,6 +58,7 @@ import { useUser } from '@/hooks/use-user';
 import { signIn } from '@/lib/auth';
 import { maxBodyLength, minBodyLength } from '@/lib/commit';
 import { commitStateKey } from '@/lib/commit-state';
+import type { RemixDraft } from '@/lib/run-remix';
 import { hasModKey } from '@/lib/keyboard';
 import {
     characterCount,
@@ -398,10 +399,12 @@ export function ThreadActions({
     thread,
     actions,
     hasKeyboardShortcuts = false,
+    remixDraft,
 }: {
     thread: Thread;
     actions?: ReactNode;
     hasKeyboardShortcuts?: boolean;
+    remixDraft?: RemixDraft | null;
 }) {
     const { auth } = usePage().props;
     const { commit } = thread;
@@ -493,6 +496,7 @@ export function ThreadActions({
 
             {thread.isReplying && !isDeleted(commit) && (
                 <ReplyComposer
+                    remixDraft={remixDraft}
                     parent={commit}
                     onCancel={thread.cancelReply}
                     onReplied={thread.onReplied}
@@ -786,6 +790,11 @@ function CommitReply({
     const { auth } = usePage().props;
     const now = useNow();
     const [isConfirming, setIsConfirming] = useState(false);
+    const [remixDraft, setRemixDraft] = useState<RemixDraft | null>(null);
+    const beginRemix = (body: string) => {
+        setRemixDraft({ id: crypto.randomUUID(), body });
+        thread.startReply();
+    };
     const request = useHttp<Record<string, never>, { deleted: DeletedFlash }>(
         {},
     );
@@ -929,6 +938,8 @@ function CommitReply({
                     )}
 
                     <FoldedCommitBody
+                        commitId={reply.id}
+                        onRemix={beginRemix}
                         segments={reply.body_segments}
                         mentions={reply.mentions}
                         previewSegments={reply.preview_segments}
@@ -970,6 +981,7 @@ function CommitReply({
                     ) : (
                         <ThreadActions
                             thread={thread}
+                            remixDraft={remixDraft}
                             actions={
                                 <>
                                     <CommitStarButton
@@ -996,10 +1008,12 @@ function ReplyComposer({
     parent,
     onCancel,
     onReplied,
+    remixDraft,
 }: {
     parent: Commit;
     onCancel: () => void;
     onReplied: () => void;
+    remixDraft?: RemixDraft | null;
 }) {
     const { user } = useUser();
     const {
@@ -1029,6 +1043,19 @@ function ReplyComposer({
     });
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const secrets = useSecretWarning(body);
+    const [remixConflict, setRemixConflict] = useState<string | null>(null);
+    const importedRemixId = useRef<string | null>(null);
+
+    useEffect(() => {
+        if (!remixDraft || importedRemixId.current === remixDraft.id) return;
+        importedRemixId.current = remixDraft.id;
+        if (body.trim() !== '' && body !== remixDraft.body) {
+            setRemixConflict(remixDraft.body);
+        } else {
+            updateBody(remixDraft.body);
+        }
+    }, [remixDraft, body, updateBody]);
+
     const isReplyable =
         images.length > 0 || characterCount(body.trim()) >= minBodyLength;
     const preview = useComposerPreview({
@@ -1120,6 +1147,15 @@ function ReplyComposer({
         >
             {attachments.isDraggingFiles && (
                 <ImageDropOverlay className="-inset-px" />
+            )}
+            {remixConflict !== null && (
+                <div role="alert" className="mb-2 flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-2 text-xs">
+                    <span className="mr-auto">You already have an unsent reply. Replace it with this remix?</span>
+                    <button type="button" className="rounded-md bg-foreground px-2 py-1 text-background"
+                        onClick={() => { updateBody(remixConflict); setRemixConflict(null); textareaRef.current?.focus(); }}>Use remix</button>
+                    <button type="button" className="rounded-md border px-2 py-1"
+                        onClick={() => setRemixConflict(null)}>Keep draft</button>
+                </div>
             )}
             <label htmlFor={`reply-${parent.id}`} className="sr-only">
                 Reply to @{parent.user.username}
