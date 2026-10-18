@@ -128,6 +128,17 @@ export function RunRemixPanel({
             {mode === 'editor' ? (
                 <textarea aria-label="Editable PHP source" spellCheck={false} value={code}
                     onChange={(event) => { setCode(event.currentTarget.value); setCopied(false); }}
+                    onKeyDown={(event) => {
+                        if (event.key !== 'Tab' || event.shiftKey) return;
+                        event.preventDefault();
+                        const target = event.currentTarget;
+                        const start = target.selectionStart;
+                        const end = target.selectionEnd;
+                        if (code.length + 4 - (end - start) > MAX_RUN_SOURCE_UNITS) return;
+                        setCode(code.slice(0, start) + '    ' + code.slice(end));
+                        requestAnimationFrame(() => target.setSelectionRange(start + 4, start + 4));
+                    }}
+                    maxLength={MAX_RUN_SOURCE_UNITS}
                     rows={8}
                     className="block max-h-[45dvh] min-h-36 w-full resize-y rounded-md border bg-muted/40 p-3 font-mono text-[13px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     data-test="remix-source" />
