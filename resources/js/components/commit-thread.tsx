@@ -400,16 +400,20 @@ export function ThreadActions({
     actions,
     hasKeyboardShortcuts = false,
     remixDraft,
+    onClearRemix,
 }: {
     thread: Thread;
     actions?: ReactNode;
     hasKeyboardShortcuts?: boolean;
     remixDraft?: RemixDraft | null;
+    onClearRemix?: () => void;
 }) {
     const { auth } = usePage().props;
     const { commit } = thread;
     const hasStash = useHasStash(auth.user?.id ?? null, `reply-${commit.id}`);
     const hasReplyShortcut = hasKeyboardShortcuts && !thread.isReplying;
+    const cancelReply = () => { onClearRemix?.(); thread.cancelReply(); };
+    const onReplied = () => { onClearRemix?.(); thread.onReplied(); };
 
     return (
         <>
@@ -428,7 +432,7 @@ export function ThreadActions({
                                     auth.user === null
                                         ? signIn
                                         : thread.isReplying
-                                          ? thread.cancelReply
+                                          ? cancelReply
                                           : thread.startReply
                                 }
                                 aria-expanded={thread.isReplying}
@@ -498,8 +502,8 @@ export function ThreadActions({
                 <ReplyComposer
                     remixDraft={remixDraft}
                     parent={commit}
-                    onCancel={thread.cancelReply}
-                    onReplied={thread.onReplied}
+                    onCancel={cancelReply}
+                    onReplied={onReplied}
                 />
             )}
         </>
@@ -982,6 +986,7 @@ function CommitReply({
                         <ThreadActions
                             thread={thread}
                             remixDraft={remixDraft}
+                            onClearRemix={() => setRemixDraft(null)}
                             actions={
                                 <>
                                     <CommitStarButton
