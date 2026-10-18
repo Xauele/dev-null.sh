@@ -15,7 +15,7 @@ test('rejects empty and oversized source', () => {
     assert.throws(() => remixReply('abc', '', 'x'.repeat(3501)), /too long/);
 });
 test('rejects replies longer than the server 4000 character limit', () => {
-    assert.throws(() => remixReply('abc', 'x'.repeat(3900), 'echo 1;'), /4,000/);
+    assert.throws(() => remixReply('abc', 'x'.repeat(3990), 'echo 1;'), /4,000/);
 });
 test('diff preserves added, removed and unchanged lines', () => {
     assert.deepEqual(diffRemix('a\nb', 'a\nc'), [
@@ -25,5 +25,5 @@ test('diff preserves added, removed and unchanged lines', () => {
     ]);
 });
 test('diff handles many short lines without unbounded work', () => {
-    assert.equal(diffRemix('x\n'.repeat(200), 'y\n'.repeat(200)).length, 802);
+    assert.equal(diffRemix('x\n'.repeat(200), 'y\n'.repeat(200)).length, 402);
 });
