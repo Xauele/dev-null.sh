@@ -415,6 +415,7 @@ export function CommitCard({
                                 <ThreadActions
                                     thread={thread}
                                     remixDraft={remixDraft}
+                                    onClearRemix={() => setRemixDraft(null)}
                                     hasKeyboardShortcuts
                                     actions={
                                         <>
