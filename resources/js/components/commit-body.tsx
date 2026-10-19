@@ -2,8 +2,8 @@ import { usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 import { CodeBlock } from '@/components/code-block';
 import { LinkifiedText } from '@/components/linkified-text';
-import { emojify } from '@/lib/emoji';
 import { eligibleBlock } from '@/lib/code-deltas';
+import { emojify } from '@/lib/emoji';
 import { cn } from '@/lib/utils';
 import type { BodySegment, Commit } from '@/types';
 
@@ -55,7 +55,8 @@ export function CommitBody({
                         );
                     case 'block': {
                         const ordinal = ++codeBlockIndex;
-                        const eligible = sourceBody && eligibleBlock(sourceBody, ordinal);
+                        const eligible =
+                            sourceBody && eligibleBlock(sourceBody, ordinal);
 
                         return (
                             <CodeBlock
@@ -64,8 +65,11 @@ export function CommitBody({
                                 language={segment.language}
                                 isCopyable={!isStatic}
                                 onSuggest={
-                                    !isStatic && onSuggestCode && eligible
-                                        && segment.language?.toLowerCase() === eligible.language
+                                    !isStatic &&
+                                    onSuggestCode &&
+                                    eligible &&
+                                    segment.language?.toLowerCase() ===
+                                        eligible.language
                                         ? () => onSuggestCode(ordinal)
                                         : undefined
                                 }

@@ -25,7 +25,10 @@ export function CodeDeltaView({
         [parentId, parentBody, replyParentId, replyBody],
     );
     const lines = useMemo(
-        () => expanded && delta?.changed ? compareCodeLines(delta.original, delta.proposed) : null,
+        () =>
+            expanded && delta?.changed
+                ? compareCodeLines(delta.original, delta.proposed)
+                : null,
         [expanded, delta],
     );
 
@@ -54,22 +57,36 @@ export function CodeDeltaView({
                 >
                     {lines === null ? (
                         <p className="font-sans text-xs text-muted-foreground">
-                            Too many lines to compare here. Read the full reply instead.
+                            Too many lines to compare here. Read the full reply
+                            instead.
                         </p>
                     ) : (
                         lines.map((line, index) => (
                             <div
                                 key={index}
-                                className="flex min-w-0 gap-2 whitespace-pre-wrap wrap-anywhere"
+                                className="flex min-w-0 gap-2 wrap-anywhere whitespace-pre-wrap"
                                 data-kind={line.kind}
                             >
-                                <span className="w-3 shrink-0 text-center text-muted-foreground" aria-hidden>
-                                    {line.kind === 'added' ? '+' : line.kind === 'removed' ? '−' : ' '}
+                                <span
+                                    className="w-3 shrink-0 text-center text-muted-foreground"
+                                    aria-hidden
+                                >
+                                    {line.kind === 'added'
+                                        ? '+'
+                                        : line.kind === 'removed'
+                                          ? '−'
+                                          : ' '}
                                 </span>
                                 <span className="sr-only">
-                                    {line.kind === 'added' ? 'Added: ' : line.kind === 'removed' ? 'Removed: ' : 'Unchanged: '}
+                                    {line.kind === 'added'
+                                        ? 'Added: '
+                                        : line.kind === 'removed'
+                                          ? 'Removed: '
+                                          : 'Unchanged: '}
                                 </span>
-                                <span className="min-w-0">{line.text || ' '}</span>
+                                <span className="min-w-0">
+                                    {line.text || ' '}
+                                </span>
                             </div>
                         ))
                     )}

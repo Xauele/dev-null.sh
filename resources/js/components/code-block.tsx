@@ -67,8 +67,13 @@ export function CodeBlock({
                                     className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:bg-muted hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
                                     data-test="suggest-code-edit"
                                 >
-                                    <GitCompareArrows aria-hidden className="size-3.5" />
-                                    <span className="max-sm:sr-only">Suggest</span>
+                                    <GitCompareArrows
+                                        aria-hidden
+                                        className="size-3.5"
+                                    />
+                                    <span className="max-sm:sr-only">
+                                        Suggest
+                                    </span>
                                 </button>
                             )}
                             <button

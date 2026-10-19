@@ -44,25 +44,6 @@ jobs:
       - name: Lint
         run: composer test:lint
 
-      # Temporary fork-only diagnostic: read-only formatter output for this WIP branch.
-      - name: Print formatted Code Delta sources
-        if: always()
-        run: |
-          vp fmt resources/
-          for f in \
-            resources/js/components/code-block.tsx \
-            resources/js/components/code-delta-view.tsx \
-            resources/js/components/commit-body.tsx \
-            resources/js/components/commit-card.tsx \
-            resources/js/components/commit-thread.tsx \
-            resources/js/lib/code-delta-diff.ts \
-            resources/js/lib/code-deltas.ts; do
-            echo "CODE_DELTAS_FORMAT_BEGIN:$f"
-            base64 -w0 "$f"
-            echo
-            echo "CODE_DELTAS_FORMAT_END:$f"
-          done
-
   types:
     runs-on: ubuntu-latest
     timeout-minutes: 10

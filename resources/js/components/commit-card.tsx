@@ -4,6 +4,7 @@ import type { PointerEvent, ReactNode } from 'react';
 import { useRef, useState } from 'react';
 import CommitController from '@/actions/App/Http/Controllers/CommitController';
 import CommitLinkPreviewController from '@/actions/App/Http/Controllers/CommitLinkPreviewController';
+import { CodeDeltaView } from '@/components/code-delta-view';
 import { FoldedCommitBody } from '@/components/commit-body';
 import { CommitImages } from '@/components/commit-images';
 import { CommitPastelButton } from '@/components/commit-pastel-button';
@@ -12,7 +13,6 @@ import { CommitQuoteButton } from '@/components/commit-quote-button';
 import { CommitSecondaryActions } from '@/components/commit-secondary-actions';
 import { CommitStarButton } from '@/components/commit-star-button';
 import { CommitStatusBadge } from '@/components/commit-status-badge';
-import { CodeDeltaView } from '@/components/code-delta-view';
 import {
     ShowThreadLink,
     ThreadActions,
@@ -40,9 +40,9 @@ import {
 } from '@/components/ui/tooltip';
 import { UserPreview } from '@/components/user-preview';
 import { useNow } from '@/hooks/use-now';
-import { commitMutationOptions } from '@/lib/commit-mutation-options';
-import { eligibleBlock, formatCodeDelta } from '@/lib/code-deltas';
 import { signIn } from '@/lib/auth';
+import { eligibleBlock, formatCodeDelta } from '@/lib/code-deltas';
+import { commitMutationOptions } from '@/lib/commit-mutation-options';
 import {
     cn,
     formatFullDateTime,
@@ -122,7 +122,10 @@ export function CommitCard({
     const isDeletable = isOwn && canDelete;
     const hash = shortHash(commit.id);
     const suggestCode = (index: number) => {
-        if (!auth.user) { signIn(); return; }
+        if (!auth.user) {
+            signIn();
+            return;
+        }
         const source = eligibleBlock(commit.body, index);
         if (!source?.language) return;
         thread.startReply({
@@ -348,7 +351,11 @@ export function CommitCard({
                             )}
                             <FoldedCommitBody
                                 sourceBody={commit.body}
-                                onSuggestCode={commit.replies_count !== undefined ? suggestCode : undefined}
+                                onSuggestCode={
+                                    commit.replies_count !== undefined
+                                        ? suggestCode
+                                        : undefined
+                                }
                                 segments={commit.body_segments}
                                 mentions={commit.mentions}
                                 previewSegments={

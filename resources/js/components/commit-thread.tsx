@@ -14,6 +14,7 @@ import CommitLinkPreviewController from '@/actions/App/Http/Controllers/CommitLi
 import CommitReplyController from '@/actions/App/Http/Controllers/CommitReplyController';
 import { ActionTooltip } from '@/components/action-tooltip';
 import { BodyCounter } from '@/components/body-counter';
+import { CodeDeltaView } from '@/components/code-delta-view';
 import { FoldedCommitBody } from '@/components/commit-body';
 import {
     ImageDropOverlay,
@@ -26,7 +27,6 @@ import { CommitPastelButton } from '@/components/commit-pastel-button';
 import { CommitSecondaryActions } from '@/components/commit-secondary-actions';
 import { CommitStarButton } from '@/components/commit-star-button';
 import { CommitStatusBadge } from '@/components/commit-status-badge';
-import { CodeDeltaView } from '@/components/code-delta-view';
 import {
     ComposerPreviewBody,
     PreviewToggle,
@@ -57,9 +57,14 @@ import { useSharedState } from '@/hooks/use-shared-state';
 import { moveCaretToEnd, useHasStash, useStash } from '@/hooks/use-stash';
 import { useUser } from '@/hooks/use-user';
 import { signIn } from '@/lib/auth';
+import {
+    eligibleBlock,
+    formatCodeDelta,
+    resolveCodeDelta,
+    type CodeDeltaDraft,
+} from '@/lib/code-deltas';
 import { maxBodyLength, minBodyLength } from '@/lib/commit';
 import { commitStateKey } from '@/lib/commit-state';
-import { eligibleBlock, formatCodeDelta, resolveCodeDelta, type CodeDeltaDraft } from '@/lib/code-deltas';
 import { hasModKey } from '@/lib/keyboard';
 import {
     characterCount,
@@ -344,7 +349,8 @@ export function useThread(
         isLoading,
         isReplying,
         suggestion,
-        updateSuggestion: (body: string) => setSuggestion((current) => current ? { ...current, body } : null),
+        updateSuggestion: (body: string) =>
+            setSuggestion((current) => (current ? { ...current, body } : null)),
         toggle: () => {
             if (!isOpen && replies === null) {
                 reload();
@@ -803,7 +809,10 @@ function CommitReply({
     const now = useNow();
     const [isConfirming, setIsConfirming] = useState(false);
     const suggestEdit = (index: number) => {
-        if (!auth.user) { signIn(); return; }
+        if (!auth.user) {
+            signIn();
+            return;
+        }
         const block = eligibleBlock(reply.body, index);
         if (!block?.language) return;
         thread.startReply({
@@ -811,7 +820,12 @@ function CommitReply({
             blockIndex: index,
             language: block.language,
             original: block.source,
-            body: formatCodeDelta({ parentId: reply.id, blockIndex: index, language: block.language, source: block.source }),
+            body: formatCodeDelta({
+                parentId: reply.id,
+                blockIndex: index,
+                language: block.language,
+                source: block.source,
+            }),
         });
     };
     const request = useHttp<Record<string, never>, { deleted: DeletedFlash }>(
@@ -965,8 +979,12 @@ function CommitReply({
                         className="text-[15px]"
                     />
                     {!isQuote && !isDeleted(parent) && (
-                        <CodeDeltaView parentId={parent.id} parentBody={parent.body}
-                            replyParentId={reply.parent_id} replyBody={reply.body} />
+                        <CodeDeltaView
+                            parentId={parent.id}
+                            parentBody={parent.body}
+                            replyParentId={reply.parent_id}
+                            replyBody={reply.body}
+                        />
                     )}
                     <CommitImages commit={reply} />
                     {reply.link_preview && (
@@ -1073,7 +1091,8 @@ function ReplyComposer({
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const secrets = useSecretWarning(body);
     const changedSuggestion = suggestion
-        ? resolveCodeDelta(parent.id, parent.body, parent.id, body)?.changed === true
+        ? resolveCodeDelta(parent.id, parent.body, parent.id, body)?.changed ===
+          true
         : false;
     const isReplyable = suggestion
         ? changedSuggestion
@@ -1171,9 +1190,12 @@ function ReplyComposer({
                 <ImageDropOverlay className="-inset-px" />
             )}
             {suggestion && (
-                <p className="mb-2 border-b pb-2 font-mono text-xs text-muted-foreground"
-                    data-test="code-delta-draft-notice">
-                    Editing a code delta. Your existing reply draft is preserved.
+                <p
+                    className="mb-2 border-b pb-2 font-mono text-xs text-muted-foreground"
+                    data-test="code-delta-draft-notice"
+                >
+                    Editing a code delta. Your existing reply draft is
+                    preserved.
                 </p>
             )}
             <label htmlFor={`reply-${parent.id}`} className="sr-only">
@@ -1190,7 +1212,9 @@ function ReplyComposer({
                     onValueChange={updateBody}
                     onKeyDown={onKeyDown}
                     onPaste={suggestion ? undefined : attachments.onPaste}
-                    onFocus={isRestored && !suggestion ? moveCaretToEnd : undefined}
+                    onFocus={
+                        isRestored && !suggestion ? moveCaretToEnd : undefined
+                    }
                     maxLength={maxBodyLength}
                     placeholder={`Reply to @${parent.user.username}`}
                     className={cn(
@@ -1237,12 +1261,17 @@ function ReplyComposer({
                 />
             )}
             {suggestion && (
-                <CodeDeltaView parentId={parent.id} parentBody={parent.body}
-                    replyParentId={parent.id} replyBody={body} />
+                <CodeDeltaView
+                    parentId={parent.id}
+                    parentBody={parent.body}
+                    replyParentId={parent.id}
+                    replyBody={body}
+                />
             )}
             {suggestion && !changedSuggestion && (
                 <p role="status" className="mt-1 text-xs text-muted-foreground">
-                    Change at least one line of the code block to submit a suggestion.
+                    Change at least one line of the code block to submit a
+                    suggestion.
                 </p>
             )}
             <div className="mt-1.5 flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
