@@ -1030,21 +1030,30 @@ function ReplyComposer({
     parent,
     onCancel,
     onReplied,
+    suggestion,
+    onSuggestionChange,
 }: {
     parent: Commit;
     onCancel: () => void;
     onReplied: () => void;
+    suggestion: CodeDeltaDraft | null;
+    onSuggestionChange: (body: string) => void;
 }) {
     const { user } = useUser();
     const {
-        body,
-        images,
+        body: storedBody,
+        images: storedImages,
         descriptions,
         isRestored,
-        updateBody,
+        updateBody: updateStoredBody,
         updateImages,
         drop,
     } = useStash(user.id, `reply-${parent.id}`);
+    // A code suggestion is ephemeral and separate from the normal reply stash.
+    // No existing text or images are touched unless the user writes a normal reply.
+    const body = suggestion?.body ?? storedBody;
+    const images = suggestion ? [] : storedImages;
+    const updateBody = suggestion ? onSuggestionChange : updateStoredBody;
     const attachments = useImageAttachments(images, descriptions, updateImages);
     const linkCard = useLinkCard(body);
     const updateCommitsCount = useCommitsCountUpdate();
@@ -1063,8 +1072,12 @@ function ReplyComposer({
     });
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const secrets = useSecretWarning(body);
-    const isReplyable =
-        images.length > 0 || characterCount(body.trim()) >= minBodyLength;
+    const changedSuggestion = suggestion
+        ? resolveCodeDelta(parent.id, parent.body, parent.id, body)?.changed === true
+        : false;
+    const isReplyable = suggestion
+        ? changedSuggestion
+        : images.length > 0 || characterCount(body.trim()) >= minBodyLength;
     const preview = useComposerPreview({
         body,
         textareaRef,
@@ -1109,7 +1122,7 @@ function ReplyComposer({
         request.setData(() => ({
             body,
             images,
-            image_descriptions: descriptions,
+            image_descriptions: suggestion ? [] : descriptions,
             ...(linkCard.isChosen
                 ? { link_preview_url: linkCard.link ?? '' }
                 : {}),
@@ -1118,8 +1131,10 @@ function ReplyComposer({
         request
             .submit(CommitReplyController.store(parent), {
                 onSuccess: (reply) => {
-                    attachments.clear();
-                    drop();
+                    if (!suggestion) {
+                        attachments.clear();
+                        drop();
+                    }
                     linkCard.reset();
                     returnFocusToCommit();
                     router.flash(() => reply);
@@ -1148,12 +1163,18 @@ function ReplyComposer({
     return (
         <form
             onSubmit={submit}
-            {...attachments.dropzone}
+            {...(suggestion ? {} : attachments.dropzone)}
             className="relative mt-2 rounded-lg border bg-background p-2.5 transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50"
             data-test="reply-composer"
         >
-            {attachments.isDraggingFiles && (
+            {!suggestion && attachments.isDraggingFiles && (
                 <ImageDropOverlay className="-inset-px" />
+            )}
+            {suggestion && (
+                <p className="mb-2 border-b pb-2 font-mono text-xs text-muted-foreground"
+                    data-test="code-delta-draft-notice">
+                    Editing a code delta. Your existing reply draft is preserved.
+                </p>
             )}
             <label htmlFor={`reply-${parent.id}`} className="sr-only">
                 Reply to @{parent.user.username}
@@ -1168,8 +1189,8 @@ function ReplyComposer({
                     value={body}
                     onValueChange={updateBody}
                     onKeyDown={onKeyDown}
-                    onPaste={attachments.onPaste}
-                    onFocus={isRestored ? moveCaretToEnd : undefined}
+                    onPaste={suggestion ? undefined : attachments.onPaste}
+                    onFocus={isRestored && !suggestion ? moveCaretToEnd : undefined}
                     maxLength={maxBodyLength}
                     placeholder={`Reply to @${parent.user.username}`}
                     className={cn(
@@ -1191,7 +1212,7 @@ function ReplyComposer({
                 message={errors.body ?? errors.link_preview_url}
                 className="px-1"
             />
-            {!preview.isPreviewing && (
+            {!suggestion && !preview.isPreviewing && (
                 <ImagePickerPreviews
                     images={attachments.images}
                     descriptions={attachments.descriptions}
@@ -1209,26 +1230,41 @@ function ReplyComposer({
                 onApprove={secrets.approve}
                 onEdit={preview.close}
             />
-            <InputError
-                message={attachments.error ?? imageErrorFrom(errors)}
-                className="mt-1 px-1"
-            />
+            {!suggestion && (
+                <InputError
+                    message={attachments.error ?? imageErrorFrom(errors)}
+                    className="mt-1 px-1"
+                />
+            )}
+            {suggestion && (
+                <CodeDeltaView parentId={parent.id} parentBody={parent.body}
+                    replyParentId={parent.id} replyBody={body} />
+            )}
+            {suggestion && !changedSuggestion && (
+                <p role="status" className="mt-1 text-xs text-muted-foreground">
+                    Change at least one line of the code block to submit a suggestion.
+                </p>
+            )}
             <div className="mt-1.5 flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
                 <div className="mr-auto flex min-w-0 items-center gap-2">
-                    <ImagePickerButton
-                        count={images.length}
-                        disabled={processing}
-                        onPick={attachments.attach}
-                        className="size-8"
-                    />
+                    {!suggestion && (
+                        <ImagePickerButton
+                            count={images.length}
+                            disabled={processing}
+                            onPick={attachments.attach}
+                            className="size-8"
+                        />
+                    )}
                     <PreviewToggle preview={preview} className="-ml-2 size-8" />
-                    <LinkCardPicker
-                        linkCard={linkCard}
-                        disabled={processing}
-                        className="-ml-1"
-                        labelClassName="max-sm:sr-only"
-                    />
-                    {isRestored && (
+                    {!suggestion && (
+                        <LinkCardPicker
+                            linkCard={linkCard}
+                            disabled={processing}
+                            className="-ml-1"
+                            labelClassName="max-sm:sr-only"
+                        />
+                    )}
+                    {isRestored && !suggestion && (
                         <StashLabel
                             onDrop={() => {
                                 attachments.clear();
