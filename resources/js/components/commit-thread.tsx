@@ -26,6 +26,7 @@ import { CommitPastelButton } from '@/components/commit-pastel-button';
 import { CommitSecondaryActions } from '@/components/commit-secondary-actions';
 import { CommitStarButton } from '@/components/commit-star-button';
 import { CommitStatusBadge } from '@/components/commit-status-badge';
+import { CodeDeltaView } from '@/components/code-delta-view';
 import {
     ComposerPreviewBody,
     PreviewToggle,
@@ -58,6 +59,7 @@ import { useUser } from '@/hooks/use-user';
 import { signIn } from '@/lib/auth';
 import { maxBodyLength, minBodyLength } from '@/lib/commit';
 import { commitStateKey } from '@/lib/commit-state';
+import { eligibleBlock, formatCodeDelta, resolveCodeDelta, type CodeDeltaDraft } from '@/lib/code-deltas';
 import { hasModKey } from '@/lib/keyboard';
 import {
     characterCount,
@@ -125,9 +127,11 @@ type Thread = {
     isPreview: boolean;
     isLoading: boolean;
     isReplying: boolean;
+    suggestion: CodeDeltaDraft | null;
+    updateSuggestion: (body: string) => void;
     toggle: () => void;
     loadMore: () => void;
-    startReply: () => void;
+    startReply: (suggestion?: CodeDeltaDraft) => void;
     cancelReply: () => void;
     onReplied: () => void;
     onDeleted: () => void;
@@ -220,6 +224,7 @@ export function useThread(
     );
     const [isLoading, setIsLoading] = useState(false);
     const [isReplying, setIsReplying] = useState(false);
+    const [suggestion, setSuggestion] = useState<CodeDeltaDraft | null>(null);
 
     const [previousPreview, setPreviousPreview] = useState(preview);
     if (preview !== previousPreview) {
@@ -338,6 +343,8 @@ export function useThread(
         isPreview,
         isLoading,
         isReplying,
+        suggestion,
+        updateSuggestion: (body: string) => setSuggestion((current) => current ? { ...current, body } : null),
         toggle: () => {
             if (!isOpen && replies === null) {
                 reload();
@@ -359,9 +366,16 @@ export function useThread(
                 .catch(() => undefined)
                 .finally(() => setIsLoading(false));
         },
-        startReply: () => setIsReplying(true),
-        cancelReply: () => setIsReplying(false),
+        startReply: (draft?: CodeDeltaDraft) => {
+            setSuggestion(draft ?? null);
+            setIsReplying(true);
+        },
+        cancelReply: () => {
+            setSuggestion(null);
+            setIsReplying(false);
+        },
         onReplied: () => {
+            setSuggestion(null);
             changedThreadIds.add(commit.id);
             setIsReplying(false);
             setIsOpen(true);
@@ -494,6 +508,8 @@ export function ThreadActions({
             {thread.isReplying && !isDeleted(commit) && (
                 <ReplyComposer
                     parent={commit}
+                    suggestion={thread.suggestion}
+                    onSuggestionChange={thread.updateSuggestion}
                     onCancel={thread.cancelReply}
                     onReplied={thread.onReplied}
                 />
@@ -786,6 +802,18 @@ function CommitReply({
     const { auth } = usePage().props;
     const now = useNow();
     const [isConfirming, setIsConfirming] = useState(false);
+    const suggestEdit = (index: number) => {
+        if (!auth.user) { signIn(); return; }
+        const block = eligibleBlock(reply.body, index);
+        if (!block?.language) return;
+        thread.startReply({
+            parentId: reply.id,
+            blockIndex: index,
+            language: block.language,
+            original: block.source,
+            body: formatCodeDelta({ parentId: reply.id, blockIndex: index, language: block.language, source: block.source }),
+        });
+    };
     const request = useHttp<Record<string, never>, { deleted: DeletedFlash }>(
         {},
     );
@@ -929,11 +957,17 @@ function CommitReply({
                     )}
 
                     <FoldedCommitBody
+                        sourceBody={reply.body}
+                        onSuggestCode={suggestEdit}
                         segments={reply.body_segments}
                         mentions={reply.mentions}
                         previewSegments={reply.preview_segments}
                         className="text-[15px]"
                     />
+                    {!isQuote && !isDeleted(parent) && (
+                        <CodeDeltaView parentId={parent.id} parentBody={parent.body}
+                            replyParentId={reply.parent_id} replyBody={reply.body} />
+                    )}
                     <CommitImages commit={reply} />
                     {reply.link_preview && (
                         <LinkPreview
