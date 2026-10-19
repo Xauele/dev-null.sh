@@ -1,4 +1,4 @@
-import { Check, Copy, WrapText } from 'lucide-react';
+import { Check, Copy, GitCompareArrows, WrapText } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useClipboard } from '@/hooks/use-clipboard';
@@ -8,10 +8,12 @@ export function CodeBlock({
     html,
     language,
     isCopyable = true,
+    onSuggest,
 }: {
     html: string;
     language: string | null;
     isCopyable?: boolean;
+    onSuggest?: () => void;
 }) {
     const codeRef = useRef<HTMLPreElement>(null);
     const [, copy] = useClipboard();
@@ -56,6 +58,19 @@ export function CodeBlock({
                     </span>
                     {isCopyable && (
                         <div className="flex shrink-0 items-center gap-0.5">
+                            {onSuggest && (
+                                <button
+                                    type="button"
+                                    onClick={onSuggest}
+                                    title="Suggest edit"
+                                    aria-label="Suggest edit to this code block"
+                                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:bg-muted hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+                                    data-test="suggest-code-edit"
+                                >
+                                    <GitCompareArrows aria-hidden className="size-3.5" />
+                                    <span className="max-sm:sr-only">Suggest</span>
+                                </button>
+                            )}
                             <button
                                 type="button"
                                 onClick={() => setIsWrapped(!isWrapped)}

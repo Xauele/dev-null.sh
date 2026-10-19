@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CodeBlock } from '@/components/code-block';
 import { LinkifiedText } from '@/components/linkified-text';
 import { emojify } from '@/lib/emoji';
+import { eligibleBlock } from '@/lib/code-deltas';
 import { cn } from '@/lib/utils';
 import type { BodySegment, Commit } from '@/types';
 
@@ -11,13 +12,18 @@ export function CommitBody({
     mentions,
     className,
     isStatic = false,
+    sourceBody,
+    onSuggestCode,
 }: {
     segments: BodySegment[];
     mentions: Commit['mentions'];
     className?: string;
     isStatic?: boolean;
+    sourceBody?: string;
+    onSuggestCode?: (index: number) => void;
 }) {
     const { auth } = usePage().props;
+    let codeBlockIndex = 0;
 
     return (
         <div
@@ -47,15 +53,25 @@ export function CommitBody({
                                 {segment.code}
                             </code>
                         );
-                    case 'block':
+                    case 'block': {
+                        const ordinal = ++codeBlockIndex;
+                        const eligible = sourceBody && eligibleBlock(sourceBody, ordinal);
+
                         return (
                             <CodeBlock
                                 key={index}
                                 html={segment.html}
                                 language={segment.language}
                                 isCopyable={!isStatic}
+                                onSuggest={
+                                    !isStatic && onSuggestCode && eligible
+                                        && segment.language?.toLowerCase() === eligible.language
+                                        ? () => onSuggestCode(ordinal)
+                                        : undefined
+                                }
                             />
                         );
+                    }
                 }
             })}
         </div>
@@ -70,11 +86,15 @@ export function FoldedCommitBody({
     previewSegments,
     mentions,
     className,
+    sourceBody,
+    onSuggestCode,
 }: {
     segments: BodySegment[];
     previewSegments: BodySegment[] | null;
     mentions: Commit['mentions'];
     className?: string;
+    sourceBody?: string;
+    onSuggestCode?: (index: number) => void;
 }) {
     const [isUnfolded, setIsUnfolded] = useState(false);
     const bodyRef = useRef<HTMLDivElement>(null);
@@ -85,6 +105,8 @@ export function FoldedCommitBody({
                 segments={segments}
                 mentions={mentions}
                 className={className}
+                sourceBody={sourceBody}
+                onSuggestCode={onSuggestCode}
             />
         );
     }
@@ -111,6 +133,8 @@ export function FoldedCommitBody({
                 segments={isUnfolded ? segments : previewSegments}
                 mentions={mentions}
                 className={className}
+                sourceBody={sourceBody}
+                onSuggestCode={onSuggestCode}
             />
             {!isUnfolded && (
                 <button
