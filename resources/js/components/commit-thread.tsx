@@ -440,7 +440,7 @@ export function ThreadActions({
                                         ? signIn
                                         : thread.isReplying
                                           ? thread.cancelReply
-                                          : thread.startReply
+                                          : () => thread.startReply()
                                 }
                                 aria-expanded={thread.isReplying}
                                 aria-keyshortcuts={

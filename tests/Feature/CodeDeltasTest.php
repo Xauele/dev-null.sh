@@ -9,7 +9,7 @@ use App\Models\User;
 it('publishes a code delta through the normal reply route and moderation', function (): void {
     $parent = Commit::factory()->create(['body' => "Try this:\n```php\nreturn [0, 7];\n```"]);
     $user = User::factory()->create();
-    $body = "Patch for ".substr(str_replace('-', '', $parent->id), -7)." · block 1\n\n```php\nreturn [0, 7, 9];\n```";
+    $body = 'Patch for '.mb_substr(str_replace('-', '', $parent->id), -7)." · block 1\n\n```php\nreturn [0, 7, 9];\n```";
 
     $response = $this->actingAs($user)->postJson(route('commit-reply.store', $parent), ['body' => $body]);
 
@@ -25,7 +25,7 @@ it('does not let a suggested code reply bypass parent visibility', function (): 
     $user = User::factory()->create();
 
     $this->actingAs($user)->postJson(route('commit-reply.store', $parent), [
-        'body' => "Patch for ".substr(str_replace('-', '', $parent->id), -7)." · block 1\n\n```php\nreturn 1;\n```",
+        'body' => "Patch for ".mb_substr(str_replace('-', '', $parent->id), -7)." · block 1\n\n```php\nreturn 1;\n```",
     ])->assertNotFound();
 
     expect($parent->replies()->count())->toBe(0);
