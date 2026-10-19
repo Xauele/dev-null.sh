@@ -4,6 +4,7 @@ import type { PointerEvent, ReactNode } from 'react';
 import { useRef, useState } from 'react';
 import CommitController from '@/actions/App/Http/Controllers/CommitController';
 import CommitLinkPreviewController from '@/actions/App/Http/Controllers/CommitLinkPreviewController';
+import { CodeDeltaView } from '@/components/code-delta-view';
 import { FoldedCommitBody } from '@/components/commit-body';
 import { CommitImages } from '@/components/commit-images';
 import { CommitPastelButton } from '@/components/commit-pastel-button';
@@ -39,6 +40,8 @@ import {
 } from '@/components/ui/tooltip';
 import { UserPreview } from '@/components/user-preview';
 import { useNow } from '@/hooks/use-now';
+import { signIn } from '@/lib/auth';
+import { eligibleBlock, formatCodeDelta } from '@/lib/code-deltas';
 import { commitMutationOptions } from '@/lib/commit-mutation-options';
 import {
     cn,
@@ -118,6 +121,26 @@ export function CommitCard({
     const isOwn = commit.user_id === auth.user?.id;
     const isDeletable = isOwn && canDelete;
     const hash = shortHash(commit.id);
+    const suggestCode = (index: number) => {
+        if (!auth.user) {
+            signIn();
+            return;
+        }
+        const source = eligibleBlock(commit.body, index);
+        if (!source?.language) return;
+        thread.startReply({
+            parentId: commit.id,
+            blockIndex: index,
+            language: source.language,
+            original: source.source,
+            body: formatCodeDelta({
+                parentId: commit.id,
+                blockIndex: index,
+                language: source.language,
+                source: source.source,
+            }),
+        });
+    };
     const permalink = CommitController.show({ user: commit.user, commit });
 
     const cancelDeletion = () => {
@@ -327,6 +350,12 @@ export function CommitCard({
                                 </Link>
                             )}
                             <FoldedCommitBody
+                                sourceBody={commit.body}
+                                onSuggestCode={
+                                    commit.replies_count !== undefined
+                                        ? suggestCode
+                                        : undefined
+                                }
                                 segments={commit.body_segments}
                                 mentions={commit.mentions}
                                 previewSegments={
@@ -339,6 +368,14 @@ export function CommitCard({
                                     isFocused ? 'text-[17px]' : 'text-[15px]',
                                 )}
                             />
+                            {commit.parent && !isDeleted(commit.parent) && (
+                                <CodeDeltaView
+                                    parentId={commit.parent.id}
+                                    parentBody={commit.parent.body}
+                                    replyParentId={commit.parent_id}
+                                    replyBody={commit.body}
+                                />
+                            )}
                             {showImages && <CommitImages commit={commit} />}
                             {commit.poll && (
                                 <CommitPoll
