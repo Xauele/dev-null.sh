@@ -25,7 +25,7 @@ it('does not let a suggested code reply bypass parent visibility', function (): 
     $user = User::factory()->create();
 
     $this->actingAs($user)->postJson(route('commit-reply.store', $parent), [
-        'body' => "Patch for ".mb_substr(str_replace('-', '', $parent->id), -7)." · block 1\n\n```php\nreturn 1;\n```",
+        'body' => 'Patch for '.mb_substr(str_replace('-', '', $parent->id), -7)." · block 1\n\n```php\nreturn 1;\n```",
     ])->assertNotFound();
 
     expect($parent->replies()->count())->toBe(0);
