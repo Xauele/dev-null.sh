@@ -40,6 +40,7 @@ import {
 import { UserPreview } from '@/components/user-preview';
 import { useNow } from '@/hooks/use-now';
 import { commitMutationOptions } from '@/lib/commit-mutation-options';
+import type { RemixDraft } from '@/lib/run-remix';
 import {
     cn,
     formatFullDateTime,
@@ -113,6 +114,11 @@ export function CommitCard({
     const [deletion, setDeletion] = useState<
         'idle' | 'confirming' | 'deleting'
     >('idle');
+    const [remixDraft, setRemixDraft] = useState<RemixDraft | null>(null);
+    const beginRemix = (body: string) => {
+        setRemixDraft({ id: crypto.randomUUID(), body });
+        thread.startReply();
+    };
 
     const hasVisibleReplies = thread.isOpen && !!thread.replies?.length;
     const isOwn = commit.user_id === auth.user?.id;
@@ -327,6 +333,12 @@ export function CommitCard({
                                 </Link>
                             )}
                             <FoldedCommitBody
+                                commitId={commit.id}
+                                onRemix={
+                                    commit.replies_count === undefined
+                                        ? undefined
+                                        : beginRemix
+                                }
                                 segments={commit.body_segments}
                                 mentions={commit.mentions}
                                 previewSegments={
@@ -407,6 +419,8 @@ export function CommitCard({
                             ) : (
                                 <ThreadActions
                                     thread={thread}
+                                    remixDraft={remixDraft}
+                                    onClearRemix={() => setRemixDraft(null)}
                                     hasKeyboardShortcuts
                                     actions={
                                         <>
