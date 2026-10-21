@@ -193,7 +193,6 @@ it('exports signatures as part of the author data export', function (): void {
         ->and($signatures[0]['public_key'])->toBe($this->proofKeyPair->publicKey->toOpenSsh());
 });
 
-
 it('stores image proofs without losing signed image uploads', function (): void {
     Storage::fake();
 
