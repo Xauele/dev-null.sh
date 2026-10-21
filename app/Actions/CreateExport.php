@@ -141,23 +141,25 @@ final readonly class CreateExport
             ->join('commits', 'commits.id', '=', 'commit_signatures.commit_id')
             ->where('commits.user_id', $user->id)
             ->orderBy('commit_signatures.commit_id')
-            ->cursor([
+            ->select([
                 'commit_signatures.commit_id',
                 'commit_signatures.payload',
                 'commit_signatures.signature',
                 'commit_signatures.public_key',
                 'commit_signatures.fingerprint',
                 'commit_signatures.namespace',
-            ]);
+            ])
+            ->cursor();
 
         foreach ($rows as $row) {
+            /** @var object{commit_id: string, payload: string, signature: string, public_key: string, fingerprint: string, namespace: string} $row */
             yield [
-                'commit_id' => (string) $row->commit_id,
-                'payload' => (string) $row->payload,
-                'signature' => (string) $row->signature,
-                'public_key' => (string) $row->public_key,
-                'fingerprint' => (string) $row->fingerprint,
-                'namespace' => (string) $row->namespace,
+                'commit_id' => $row->commit_id,
+                'payload' => $row->payload,
+                'signature' => $row->signature,
+                'public_key' => $row->public_key,
+                'fingerprint' => $row->fingerprint,
+                'namespace' => $row->namespace,
             ];
         }
     }

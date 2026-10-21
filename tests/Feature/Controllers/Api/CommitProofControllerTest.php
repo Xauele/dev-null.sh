@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\CreateCommit;
+use App\Actions\CreateExport;
 use App\Actions\DeleteUser;
 use App\Dto\SshSignature;
 use App\Enums\CommitStatus;
@@ -10,9 +11,9 @@ use App\Models\Commit;
 use App\Models\SshKey;
 use App\Models\User;
 use App\Services\SignedCommits;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\SshKeyPair;
 
@@ -185,7 +186,7 @@ it('erases proof bytes even when a signed reply survives as an anonymous tombsto
 it('exports signatures as part of the author data export', function (): void {
     submitPortableProof(signedCommit($this->proofKeyPair, 'Exportable signed bytes'))->assertCreated();
 
-    $export = resolve(\App\Actions\CreateExport::class)->handle($this->proofUser);
+    $export = resolve(CreateExport::class)->handle($this->proofUser);
     $signatures = iterator_to_array($export['commit_signatures']);
 
     expect($signatures)->toHaveCount(1)
