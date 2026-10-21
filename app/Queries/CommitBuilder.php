@@ -26,8 +26,8 @@ final class CommitBuilder extends Builder
      * Every column but the embedding, in the table's order.
      */
     private const array COLUMNS_BUT_EMBEDDING = [
-        'id', 'user_id', 'body', 'signer_fingerprint', 'created_at', 'updated_at', 'status', 'parent_id', 'deleted_at', 'link_preview_id',
-        'quoted_commit_id', 'mentions', 'ai_decision', 'ai_categories', 'root_id', 'hot_score', 'pasteis_count',
+        'id', 'user_id', 'body', 'created_at', 'updated_at', 'status', 'parent_id', 'deleted_at', 'link_preview_id',
+        'quoted_commit_id', 'mentions', 'ai_decision', 'ai_categories', 'root_id', 'hot_score', 'signer_fingerprint', 'pasteis_count',
     ];
 
     /**
