@@ -17,7 +17,6 @@ final readonly class CommitProofController
 {
     public function show(ShowCommitProofRequest $request, Commit $commit): JsonResponse
     {
-
         /** @var object{signature: string, payload: string, public_key: string, fingerprint: string, namespace: string}|null $record */
         $record = DB::table('commit_signatures')->where('commit_id', $commit->id)->first();
 
