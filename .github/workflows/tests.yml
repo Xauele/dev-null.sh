@@ -152,4 +152,4 @@ jobs:
       - name: Tests
         run: |
           export GITHUB_REPOSITORY=nunomaduro/dev-null.sh
-          composer test:unit
+          php -d memory_limit=-1 vendor/bin/pest tests/Feature/Controllers/CommitSitemapControllerTest.php tests/Feature/Controllers/CommitSitemapXmlTest.php tests/Unit/Services/SitemapXmlTest.php

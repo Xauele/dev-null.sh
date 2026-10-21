@@ -18,12 +18,12 @@ final readonly class SitemapXml
 
         foreach ($urls as $url) {
             $body .= "    <url>\n";
-            $body .= '        <loc>'.self::escape($url['loc'])."</loc>\n";
-            $body .= '        <lastmod>'.self::escape($url['lastmod'])."</lastmod>\n";
+            $body .= '        <loc>'.$this->escape($url['loc'])."</loc>\n";
+            $body .= '        <lastmod>'.$this->escape($url['lastmod'])."</lastmod>\n";
 
             foreach ($url['images'] ?? [] as $image) {
                 $body .= "        <image:image>\n";
-                $body .= '            <image:loc>'.self::escape($image)."</image:loc>\n";
+                $body .= '            <image:loc>'.$this->escape($image)."</image:loc>\n";
                 $body .= "        </image:image>\n";
             }
 
@@ -33,7 +33,7 @@ final readonly class SitemapXml
         return $body."</urlset>\n";
     }
 
-    private static function escape(string $value): string
+    private function escape(string $value): string
     {
         return htmlspecialchars($value, ENT_XML1 | ENT_QUOTES | ENT_SUBSTITUTE | ENT_DISALLOWED, 'UTF-8');
     }
