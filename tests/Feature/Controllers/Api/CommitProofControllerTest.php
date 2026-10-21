@@ -47,7 +47,7 @@ it('returns a portable receipt verifiable without contacting the site or GitHub'
     $response = $this->getJson(route('api-commit-proof.show', $commit));
 
     $response->assertOk()
-        ->assertHeader('Cache-Control', 'no-store')
+        ->assertHeader('Cache-Control', 'no-store, private')
         ->assertJsonPath('namespace', SignedCommits::Namespace)
         ->assertJsonPath('fingerprint', $this->proofKeyPair->publicKey->fingerprint())
         ->assertJsonPath('public_key', $this->proofKeyPair->publicKey->toOpenSsh())

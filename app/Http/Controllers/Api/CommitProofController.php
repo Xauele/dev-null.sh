@@ -5,40 +5,42 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Dto\SshSignature;
-use App\Enums\CommitStatus;
+use App\Http\Requests\ShowCommitProofRequest;
 use App\Models\Commit;
 use App\Services\SignedCommits;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 final readonly class CommitProofController
 {
-    public function show(Commit $commit): JsonResponse
+    public function show(ShowCommitProofRequest $request, Commit $commit): JsonResponse
     {
-        // No proof of pending, rejected, or deleted content is publicly accessible.
-        abort_unless($commit->status === CommitStatus::Approved && ! $commit->trashed(), 404);
 
         /** @var object{signature: string, payload: string, public_key: string, fingerprint: string, namespace: string}|null $record */
         $record = DB::table('commit_signatures')->where('commit_id', $commit->id)->first();
 
-        abort_if($record === null, 404);
+        if ($record === null) {
+            throw new NotFoundHttpException;
+        }
 
         // A corrupt DB row must never produce a misleading signed receipt.
         try {
             $signature = SshSignature::parse($record->signature);
         } catch (InvalidArgumentException) {
-            abort(404);
+            throw new NotFoundHttpException;
         }
 
-        abort_unless(
+        if (! (
             in_array($record->namespace, [SignedCommits::Namespace, SignedCommits::ImagesNamespace], true)
             && $signature->verify($record->payload, $record->namespace)
             && hash_equals($record->public_key, $signature->publicKey->toOpenSsh())
             && hash_equals($record->fingerprint, $signature->publicKey->fingerprint())
-            && hash_equals($record->fingerprint, (string) $commit->signer_fingerprint),
-            404,
-        );
+            && hash_equals($record->fingerprint, (string) $commit->signer_fingerprint)
+        )) {
+            throw new NotFoundHttpException;
+        }
 
         return response()->json([
             'version' => 1,

@@ -27,12 +27,4 @@ return new class extends Migration
         });
     }
 
-    public function down(): void
-    {
-        Schema::dropIfExists('commit_signatures');
-
-        Schema::table('commits', function (Blueprint $table): void {
-            $table->dropColumn('signer_fingerprint');
-        });
-    }
 };
