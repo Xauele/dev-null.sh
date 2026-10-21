@@ -18,7 +18,7 @@ use Illuminate\Testing\TestResponse;
 use Tests\Support\SshKeyPair;
 
 /**
- * @param array{payload: string, signature: string} $signed
+ * @param  array{payload: string, signature: string}  $signed
  */
 function submitPortableProof(array $signed): TestResponse
 {
@@ -231,6 +231,17 @@ it('rejects corrupted receipt namespaces', function (): void {
     DB::table('commit_signatures')->where('commit_id', $commit->id)->update([
         'namespace' => 'devnull-api',
     ]);
+
+    $this->getJson(route('api-commit-proof.show', $commit))->assertNotFound();
+});
+
+it('does not expose corrupted signatures that fail to parse', function (): void {
+    submitPortableProof(signedCommit($this->proofKeyPair, 'Original message'))->assertCreated();
+
+    $commit = $this->proofUser->commits()->sole();
+    $commit->forceFill(['status' => CommitStatus::Approved])->save();
+
+    DB::table('commit_signatures')->where('commit_id', $commit->id)->update(['signature' => 'corrupt']);
 
     $this->getJson(route('api-commit-proof.show', $commit))->assertNotFound();
 });
