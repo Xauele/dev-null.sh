@@ -146,5 +146,10 @@ jobs:
         if: steps.build-cache.outputs.cache-hit != 'true'
         run: bun run build
 
+      - name: Benchmark sitemap XML (rendering only)
+        run: php benchmarks/sitemap-xml.php
+
       - name: Tests
-        run: composer test:unit
+        run: |
+          export GITHUB_REPOSITORY=nunomaduro/dev-null.sh
+          composer test:unit
