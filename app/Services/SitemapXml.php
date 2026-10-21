@@ -9,7 +9,7 @@ final readonly class SitemapXml
     /**
      * Render a cacheable XML document without compiling a Blade loop per URL.
      *
-     * @param iterable<array{loc: string, lastmod: string, images?: list<string>}> $urls
+     * @param  iterable<array{loc: string, lastmod: string, images?: list<string>}>  $urls
      */
     public function render(iterable $urls): string
     {

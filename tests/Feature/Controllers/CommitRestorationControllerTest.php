@@ -9,7 +9,6 @@ use App\Enums\Log;
 use App\Enums\NotificationType;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Jobs\UnfurlLink;
-use App\Models\Bookmark;
 use App\Models\Commit;
 use App\Models\CommitImage;
 use App\Models\Notification;
@@ -22,7 +21,6 @@ it('restores only the deletion state within thirty seconds', function (CommitSta
     $parent = Commit::factory()->create();
     $commit = Commit::factory()->for($parent, 'parent')->create(['status' => $status]);
     $commit->stars()->attach($commit->user);
-    $bookmark = Bookmark::factory()->create(['user_id' => $commit->user_id, 'commit_id' => $commit->id]);
     $original = $commit->only(['body', 'status', 'parent_id', 'created_at']);
 
     $this->actingAs($commit->user)->delete(route('commit.destroy', $commit))->assertRedirect();
@@ -34,8 +32,7 @@ it('restores only the deletion state within thirty seconds', function (CommitSta
         ->assertInertiaFlash('restored.id', $commit->id)
         ->assertInertiaFlash('restored.stars_count', 1)
         ->assertInertiaFlash('restored.starred', true)
-        ->assertInertiaFlash('restored.is_saved', true)
-        ->assertInertiaFlash('restored.saved_order', $bookmark->id);
+        ->assertInertiaFlash('restored.starred_order', $commit->stars()->newPivotQuery()->where('user_id', $commit->user_id)->value('created_at'));
 
     expect($commit->refresh()->only(array_keys($original)))->toEqual($original);
     $this->assertNotSoftDeleted($commit);
@@ -160,6 +157,42 @@ it('returns the actual visible parent count when undo replaces a tombstone', fun
         ->assertInertiaFlash('restored.parent.replies_count', 1);
 });
 
+it('leaves the restored next commit of a thread out of its parent count', function (): void {
+    $parent = Commit::factory()->create();
+    $next = Commit::factory()->for($parent, 'parent')->for($parent->user)->create();
+    Commit::factory()->for($parent, 'parent')->create();
+    resolve(DeleteCommit::class)->handle($next);
+
+    $this->actingAs($next->user)->post(route('commit-restoration.store', $next))
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('restored.parent.replies_count', 1)
+        ->assertInertiaFlash('restored.parent.continuation_id', $next->id);
+});
+
+it('leaves the next commit of a thread out of the count of a restored quote', function (): void {
+    $quoted = Commit::factory()->create();
+    Commit::factory()->for($quoted, 'parent')->for($quoted->user)->create();
+    Commit::factory()->for($quoted, 'parent')->create();
+    $quote = Commit::factory()->for($quoted, 'quotedCommit')->create();
+    resolve(DeleteCommit::class)->handle($quote);
+
+    $this->actingAs($quote->user)->post(route('commit-restoration.store', $quote))
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('restored.quoted_commit.replies_count', 2);
+});
+
+it('counts every reply of a deleted parent when restoring one of them', function (): void {
+    $parent = Commit::factory()->create();
+    Commit::factory()->for($parent, 'parent')->for($parent->user)->create();
+    $reply = Commit::factory()->for($parent, 'parent')->create();
+    resolve(DeleteCommit::class)->handle($reply);
+    resolve(DeleteCommit::class)->handle($parent);
+
+    $this->actingAs($reply->user)->post(route('commit-restoration.store', $reply))
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('restored.parent.replies_count', 2);
+});
+
 it('keeps a deleted parent as a tombstone when restoring its reply', function (): void {
     $parent = Commit::factory()->create();
     $reply = Commit::factory()->for($parent, 'parent')->create();
@@ -236,113 +269,6 @@ it('keeps public api and feed visibility consistent through deletion and undo', 
         $this->get(route('user-feed.show', $user))->assertOk()->assertDontSee($commit->body);
     }
 })->with(CommitStatus::cases());
-
-it('restores a series part in place without publishing continuations as feed entries or replies', function (int $position, CommitStatus $status): void {
-    $parts = commitSeries();
-    $part = $parts[$position - 1];
-    $part->update(['status' => $status]);
-
-    $user = $part->user;
-    $reply = Commit::factory()->for($user)->for($parts[0], 'parent')->create();
-
-    $this->actingAs($user)->delete(route('commit.destroy', $part))->assertRedirect();
-    $this->post(route('commit-restoration.store', $part))
-        ->assertSessionHasNoErrors()
-        ->assertInertiaFlash('restored.series_id', $part->series_id)
-        ->assertInertiaFlash('restored.series_position', $position)
-        ->assertInertiaFlash('restored.series_size', 3)
-        ->assertInertiaFlash('restored.status', $status->value);
-
-    expect($part->refresh()->status)->toBe($status);
-
-    $this->get(route('commit.show', [$user, $parts[2]]))
-        ->assertInertia(fn (Assert $page): Assert => $page
-            ->where('ancestors.0.id', $parts[0]->id)
-            ->where('ancestors.0.replies_count', 1)
-            ->where('ancestors.1.id', $parts[1]->id)
-            ->where('ancestors.'.($position - 1).'.body', $part->body)
-            ->where('ancestors.'.($position - 1).'.series_position', $position));
-
-    $this->getJson(route('api-user-commit.index', [$user, 'replies' => 1]))
-        ->assertOk()
-        ->assertJsonPath('data.*.id', [$reply->id]);
-
-    $this->getJson(route('api-user-commit.index', $user))
-        ->assertOk()
-        ->assertJsonPath('data.*.id', $position === 1 && $status !== CommitStatus::Approved ? [] : [$parts[0]->id]);
-
-    $feed = $this->get(route('user-feed.show', $user))->assertOk()
-        ->assertDontSee($parts[1]->body)
-        ->assertDontSee($parts[2]->body);
-
-    if ($position !== 1 || $status === CommitStatus::Approved) {
-        $feed->assertSee($parts[0]->body);
-    } else {
-        $feed->assertDontSee($parts[0]->body);
-    }
-
-    $this->actingAs(User::factory()->create());
-
-    if ($status === CommitStatus::Approved) {
-        $this->getJson(route('api-commit.show', $part))->assertOk()
-            ->assertJsonPath('data.id', $part->id);
-    } else {
-        $this->getJson(route('api-commit.show', $part))->assertNotFound();
-        $this->get(route('commit.show', [$user, $parts[2]]))
-            ->assertInertia(fn (Assert $page): Assert => $page
-                ->has('ancestors', 1)
-                ->where('ancestors.0.id', $parts[$position === 1 ? 1 : 0]->id));
-    }
-})->with([1, 2])->with(CommitStatus::cases());
-
-it('regroups an own pending series in moderation through deletion and undo', function (int $position): void {
-    $user = User::factory()->create(['username' => 'admin']);
-    config(['app.admins' => ['admin']]);
-    $parts = commitSeries($user, status: CommitStatus::Pending);
-    $part = $parts[$position - 1];
-
-    $this->actingAs($user)->fromRoute('moderation.show')
-        ->delete(route('commit.destroy', $part))->assertRedirectToRoute('moderation.show');
-
-    $this->get(route('moderation.show'))
-        ->assertInertia(fn (Assert $page): Assert => $page
-            ->has('commits.data', 1)
-            ->where('commits.data.0.id', $parts[$position === 1 ? 1 : 0]->id)
-            ->has('commits.data.0.series_parts', 2));
-
-    $this->fromRoute('moderation.show')->post(route('commit-restoration.store', $part))
-        ->assertSessionHasNoErrors()->assertRedirectToRoute('moderation.show');
-
-    $this->get(route('moderation.show'))
-        ->assertInertia(fn (Assert $page): Assert => $page
-            ->has('commits.data', 1)
-            ->where('commits.data.0.id', $parts[0]->id)
-            ->has('commits.data.0.series_parts', 3)
-            ->where('commits.data.0.series_parts.1.id', $parts[1]->id));
-})->with([1, 2]);
-
-it('retains the moderation status of a deleted part when the rest of the series is approved before undo', function (): void {
-    $parts = commitSeries(status: CommitStatus::Pending);
-    $user = $parts[0]->user;
-    $admin = User::factory()->create(['username' => 'admin']);
-    config(['app.admins' => ['admin']]);
-
-    $this->actingAs($user)->delete(route('commit.destroy', $parts[1]))->assertRedirect();
-    $this->actingAs($admin)->post(route('commit-approval.store', $parts[0]))->assertRedirect();
-    $this->actingAs($user)->post(route('commit-restoration.store', $parts[1]))
-        ->assertSessionHasNoErrors()->assertInertiaFlash('restored.status', 'pending');
-
-    expect($parts[0]->refresh()->status)->toBe(CommitStatus::Approved)
-        ->and($parts[1]->refresh()->status)->toBe(CommitStatus::Pending)
-        ->and($parts[2]->refresh()->status)->toBe(CommitStatus::Approved);
-
-    $this->getJson(route('api-commit.show', $parts[1]))->assertNotFound();
-    $this->actingAs($admin)->get(route('moderation.show'))
-        ->assertInertia(fn (Assert $page): Assert => $page
-            ->has('commits.data', 1)
-            ->where('commits.data.0.id', $parts[1]->id)
-            ->has('commits.data.0.series_parts', 1));
-});
 
 it('restores a reply beneath an authorless account deletion tombstone', function (): void {
     $root = Commit::factory()->create();

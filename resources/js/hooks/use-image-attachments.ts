@@ -1,18 +1,33 @@
 import type { ClipboardEvent, DragEvent } from 'react';
-import { useState } from 'react';
-import { pickImages } from '@/components/commit-image-picker';
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { maxImages, pickImages } from '@/components/commit-image-picker';
+import {
+    cancelImageRead,
+    isReadingImages,
+    readImagesForDraft,
+    subscribeImageReads,
+} from '@/lib/draft-image-reads';
+import { PickedImageError } from '@/lib/read-picked-images';
 
 export type UseImageAttachmentsReturn = {
     readonly images: File[];
     readonly descriptions: string[];
     readonly error: string | null;
+    readonly reading: boolean;
+    readonly isReading: () => boolean;
+    readonly pick: (files: File[]) => Promise<void>;
     readonly attach: (files: File[]) => void;
     readonly describe: (index: number, description: string) => void;
     readonly remove: (index: number) => void;
     readonly clear: () => void;
     readonly onPaste: (event: ClipboardEvent<HTMLElement>) => void;
-    readonly onDragOver: (event: DragEvent<HTMLElement>) => void;
-    readonly onDrop: (event: DragEvent<HTMLElement>) => void;
+    readonly isDraggingFiles: boolean;
+    readonly dropzone: {
+        readonly onDragEnter: (event: DragEvent<HTMLElement>) => void;
+        readonly onDragOver: (event: DragEvent<HTMLElement>) => void;
+        readonly onDragLeave: (event: DragEvent<HTMLElement>) => void;
+        readonly onDrop: (event: DragEvent<HTMLElement>) => void;
+    };
 };
 
 const hasFiles = (dataTransfer: DataTransfer): boolean =>
@@ -25,8 +40,10 @@ export function useImageAttachments(
     images: File[],
     descriptions: string[],
     onChange: (images: File[], descriptions: string[]) => void,
+    draftKey: string,
 ): UseImageAttachmentsReturn {
     const [error, setError] = useState<string | null>(null);
+    const [dragDepth, setDragDepth] = useState(0);
 
     const attach = (files: File[]) => {
         if (files.length === 0) {
@@ -42,10 +59,50 @@ export function useImageAttachments(
         setError(picked.error);
     };
 
+    // Async reads must merge through the latest committed attachment state.
+    const latestAttach = useRef(attach);
+    const readOwner = useRef(Symbol('image read owner'));
+    useLayoutEffect(() => {
+        latestAttach.current = attach;
+    });
+    useLayoutEffect(() => {
+        const owner = readOwner.current;
+        return () => cancelImageRead(draftKey, owner);
+    }, [draftKey]);
+    const reading = useSyncExternalStore(
+        subscribeImageReads,
+        () => isReadingImages(draftKey),
+        () => false,
+    );
+
+    const pick = async (files: File[]) => {
+        const available = Math.max(0, maxImages - images.length);
+        if (files.length === 0 || available === 0) return;
+
+        setError(null);
+        await readImagesForDraft(draftKey, files, {
+            capacity: available,
+            onReady: (prepared) => {
+                latestAttach.current(prepared);
+            },
+            onError: (error) => {
+                setError(
+                    error instanceof PickedImageError
+                        ? error.message
+                        : 'Could not read this image. Try selecting it again, or choose Browse in the photo picker.',
+                );
+            },
+            owner: readOwner.current,
+        });
+    };
+
     return {
         images,
         descriptions,
         error,
+        reading,
+        isReading: () => isReadingImages(draftKey),
+        pick,
         attach,
         describe: (index, description) => {
             onChange(
@@ -65,6 +122,7 @@ export function useImageAttachments(
             setError(null);
         },
         clear: () => {
+            cancelImageRead(draftKey);
             onChange([], []);
             setError(null);
         },
@@ -76,16 +134,32 @@ export function useImageAttachments(
                 attach(files);
             }
         },
-        onDragOver: (event) => {
-            if (hasFiles(event.dataTransfer)) {
-                event.preventDefault();
-            }
-        },
-        onDrop: (event) => {
-            if (hasFiles(event.dataTransfer)) {
-                event.preventDefault();
-                attach(Array.from(event.dataTransfer.files));
-            }
+        isDraggingFiles: dragDepth > 0,
+        dropzone: {
+            onDragEnter: (event) => {
+                if (hasFiles(event.dataTransfer)) {
+                    event.preventDefault();
+                    setDragDepth((depth) => depth + 1);
+                }
+            },
+            onDragOver: (event) => {
+                if (hasFiles(event.dataTransfer)) {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = 'copy';
+                }
+            },
+            onDragLeave: (event) => {
+                if (hasFiles(event.dataTransfer)) {
+                    setDragDepth((depth) => Math.max(0, depth - 1));
+                }
+            },
+            onDrop: (event) => {
+                if (hasFiles(event.dataTransfer)) {
+                    event.preventDefault();
+                    setDragDepth(0);
+                    attach(Array.from(event.dataTransfer.files));
+                }
+            },
         },
     };
 }

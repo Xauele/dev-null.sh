@@ -1,5 +1,6 @@
 import { ChevronDown, Plus, X } from 'lucide-react';
 import InputError from '@/components/input-error';
+import { MentionTextarea } from '@/components/mention-textarea';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -22,15 +23,19 @@ const durations = [
 ];
 
 export function PollEditor({
+    id,
     poll,
     errors,
     onChange,
     onRemove,
+    className,
 }: {
+    id: string;
     poll: PollDraft;
     errors: Record<string, string | undefined>;
     onChange: (poll: PollDraft) => void;
     onRemove: () => void;
+    className?: string;
 }) {
     const updateOption = (index: number, value: string) =>
         onChange({
@@ -46,7 +51,7 @@ export function PollEditor({
             options: poll.options.filter((_, current) => current !== index),
         });
         requestAnimationFrame(() =>
-            document.getElementById(`poll-option-${index - 1}`)?.focus(),
+            document.getElementById(`${id}-option-${index - 1}`)?.focus(),
         );
     };
 
@@ -54,7 +59,7 @@ export function PollEditor({
         onChange({ ...poll, options: [...poll.options, ''] });
         requestAnimationFrame(() =>
             document
-                .getElementById(`poll-option-${poll.options.length}`)
+                .getElementById(`${id}-option-${poll.options.length}`)
                 ?.focus(),
         );
     };
@@ -64,7 +69,7 @@ export function PollEditor({
 
     return (
         <fieldset
-            className="mt-2 rounded-lg border p-3"
+            className={cn('rounded-lg border p-3', className)}
             data-test="poll-editor"
         >
             <legend className="sr-only">Poll</legend>
@@ -77,27 +82,35 @@ export function PollEditor({
                         <div key={index}>
                             <div className="flex items-center gap-2">
                                 <label
-                                    htmlFor={`poll-option-${index}`}
+                                    htmlFor={`${id}-option-${index}`}
                                     className="sr-only"
                                 >
                                     Option {index + 1}
                                 </label>
-                                <input
-                                    id={`poll-option-${index}`}
+                                <MentionTextarea
+                                    id={`${id}-option-${index}`}
                                     name="poll[options][]"
                                     value={option}
-                                    onChange={(event) =>
+                                    onValueChange={(value) =>
                                         updateOption(
                                             index,
-                                            event.currentTarget.value,
+                                            value.replace(/[\r\n]+/g, ' '),
                                         )
                                     }
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                            event.preventDefault();
+                                        }
+                                    }}
+                                    suggestsMentions={false}
+                                    rows={1}
+                                    wrap="off"
                                     maxLength={maxOptionLength}
                                     placeholder={`Option ${index + 1}`}
                                     autoComplete="off"
                                     aria-invalid={error ? true : undefined}
                                     className={cn(
-                                        'h-9 w-full min-w-0 rounded-md border bg-transparent px-3 text-[15px] transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                                        'h-9 w-full min-w-0 resize-none overflow-hidden rounded-md border bg-transparent px-3 py-1.5 text-[15px] leading-[22px] transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
                                         'aria-invalid:border-destructive aria-invalid:ring-destructive/20',
                                     )}
                                 />

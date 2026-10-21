@@ -1,6 +1,6 @@
 import { AudioLines, Code2, Play } from 'lucide-react';
-import type { CSSProperties } from 'react';
-import { useState } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { Embed, LinkPreview } from '@/types';
 
@@ -20,22 +20,91 @@ function frameStyle(embed: Embed): CSSProperties {
         : { aspectRatio: embed.aspect_ratio };
 }
 
+function isAsciinemaRecording(embed: Embed): boolean {
+    return (
+        embed.provider === 'asciinema' &&
+        /^https:\/\/asciinema\.org\/a\/\w+\/iframe(?:[?#].*)?$/.test(embed.src)
+    );
+}
+
+function isAsciinemaBodySize(
+    data: unknown,
+): data is { type: 'bodySize'; payload: { height: number } } {
+    return (
+        typeof data === 'object' &&
+        data !== null &&
+        'type' in data &&
+        data.type === 'bodySize' &&
+        'payload' in data &&
+        typeof data.payload === 'object' &&
+        data.payload !== null &&
+        'height' in data.payload &&
+        typeof data.payload.height === 'number' &&
+        Number.isFinite(data.payload.height) &&
+        data.payload.height > 0
+    );
+}
+
+export function EmbedFrame({ embed, title }: { embed: Embed; title: string }) {
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+    const recording = isAsciinemaRecording(embed);
+    const [height, setHeight] = useState(embed.height ?? 420);
+
+    useEffect(() => {
+        if (!recording) {
+            return;
+        }
+
+        const iframe = iframeRef.current;
+        const resize = (event: MessageEvent<unknown>) => {
+            if (
+                event.origin !== 'https://asciinema.org' ||
+                event.source !== iframe?.contentWindow ||
+                !isAsciinemaBodySize(event.data)
+            ) {
+                return;
+            }
+
+            setHeight(event.data.payload.height);
+        };
+
+        window.addEventListener('message', resize);
+
+        return () => window.removeEventListener('message', resize);
+    }, [recording]);
+
+    return (
+        <iframe
+            ref={iframeRef}
+            src={embed.src}
+            title={title}
+            allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation allow-forms"
+            referrerPolicy="strict-origin-when-cross-origin"
+            allowFullScreen
+            style={recording ? { height } : frameStyle(embed)}
+            className="block w-full border-0 bg-muted"
+            data-test="link-embed-frame"
+        />
+    );
+}
+
 function Thumbnail({
-    preview,
+    src,
     className,
 }: {
-    preview: LinkPreview;
+    src: string | null;
     className?: string;
 }) {
     const [isBroken, setIsBroken] = useState(false);
 
-    if (!preview.image_url || isBroken) {
+    if (!src || isBroken) {
         return <span className={cn('bg-muted', className)} />;
     }
 
     return (
         <img
-            src={preview.image_url}
+            src={src}
             alt=""
             loading="lazy"
             referrerPolicy="no-referrer"
@@ -52,7 +121,7 @@ function Details({ preview, embed }: { preview: LinkPreview; embed: Embed }) {
                 {preview.site_name ?? embed.provider}
             </span>
             {preview.title && (
-                <span className="line-clamp-2 text-[15px] leading-snug font-medium break-words">
+                <span className="line-clamp-2 text-[15px] leading-snug font-medium wrap-break-word">
                     {preview.title}
                 </span>
             )}
@@ -60,35 +129,72 @@ function Details({ preview, embed }: { preview: LinkPreview; embed: Embed }) {
     );
 }
 
+function PlayTrigger({
+    isStatic,
+    label,
+    onPlay,
+    style,
+    className,
+    children,
+}: {
+    isStatic: boolean;
+    label: string;
+    onPlay: () => void;
+    style?: CSSProperties;
+    className: string;
+    children: ReactNode;
+}) {
+    if (isStatic) {
+        return (
+            <span style={style} className={className}>
+                {children}
+            </span>
+        );
+    }
+
+    return (
+        <button
+            type="button"
+            onClick={onPlay}
+            aria-label={label}
+            style={style}
+            className={cn(
+                'cursor-pointer focus-visible:outline-none',
+                className,
+            )}
+            data-test="link-embed-play"
+        >
+            {children}
+        </button>
+    );
+}
+
 export function LinkEmbed({
     preview,
     embed,
+    isStatic = false,
 }: {
     preview: LinkPreview;
     embed: Embed;
+    isStatic?: boolean;
 }) {
     const [isPlaying, setIsPlaying] = useState(false);
     const Icon = icons[embed.kind];
     const label = `Play ${preview.title ?? preview.url} from ${embed.provider}`;
     const isVideo = embed.aspect_ratio !== null;
+    const poster = preview.image_url ?? embed.poster ?? null;
 
     const frame = (
-        <iframe
-            src={embed.src}
+        <EmbedFrame
+            key={embed.src}
+            embed={embed}
             title={preview.title ?? `${embed.provider} player`}
-            allow="autoplay; encrypted-media; fullscreen; picture-in-picture; clipboard-write"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation allow-forms"
-            referrerPolicy="strict-origin-when-cross-origin"
-            allowFullScreen
-            style={frameStyle(embed)}
-            className="block w-full border-0 bg-muted"
-            data-test="link-embed-frame"
         />
     );
 
     return (
         <div
-            onClick={(event) => event.stopPropagation()}
+            onClick={isStatic ? undefined : (event) => event.stopPropagation()}
             className="mt-3 overflow-hidden rounded-lg border"
             data-test="link-embed"
             data-provider={embed.provider}
@@ -104,46 +210,54 @@ export function LinkEmbed({
                         {isPlaying ? (
                             frame
                         ) : (
-                            <button
-                                type="button"
-                                onClick={() => setIsPlaying(true)}
-                                aria-label={label}
+                            <PlayTrigger
+                                isStatic={isStatic}
+                                label={label}
+                                onPlay={() => setIsPlaying(true)}
                                 style={frameStyle(embed)}
-                                className="group relative block w-full cursor-pointer overflow-hidden focus-visible:outline-none"
-                                data-test="link-embed-play"
+                                className="group relative block w-full overflow-hidden"
                             >
                                 <Thumbnail
-                                    preview={preview}
+                                    src={poster}
                                     className="absolute inset-0 size-full"
                                 />
                                 <span className="absolute inset-0 bg-black/20 transition-colors group-hover:bg-black/10" />
-                                <span className="absolute top-1/2 left-1/2 flex size-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/70 text-white ring-white/60 transition-transform group-hover:scale-105 group-focus-visible:ring-2">
+                                <span className="absolute top-1/2 left-1/2 flex size-14 -translate-1/2 items-center justify-center rounded-full bg-black/70 text-white ring-white/60 transition-transform group-hover:scale-105 group-focus-visible:ring-2">
                                     <Icon className="ml-0.5 size-6 fill-current" />
                                 </span>
-                            </button>
+                            </PlayTrigger>
                         )}
                     </div>
-                    <a
-                        href={preview.url}
-                        target="_blank"
-                        rel="noopener noreferrer nofollow ugc"
-                        className="flex border-t px-3 py-2 transition-colors hover:bg-accent focus-visible:bg-accent"
-                    >
-                        <Details preview={preview} embed={embed} />
-                    </a>
+                    {isStatic ? (
+                        <span className="flex border-t px-3 py-2">
+                            <Details preview={preview} embed={embed} />
+                        </span>
+                    ) : (
+                        <a
+                            href={preview.url}
+                            target="_blank"
+                            rel="noopener noreferrer nofollow ugc"
+                            className="flex border-t px-3 py-2 transition-colors hover:bg-accent focus-visible:bg-accent"
+                        >
+                            <Details preview={preview} embed={embed} />
+                        </a>
+                    )}
                 </>
             ) : isPlaying ? (
                 frame
             ) : (
-                <button
-                    type="button"
-                    onClick={() => setIsPlaying(true)}
-                    aria-label={label}
-                    className="group flex w-full cursor-pointer items-center transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
-                    data-test="link-embed-play"
+                <PlayTrigger
+                    isStatic={isStatic}
+                    label={label}
+                    onPlay={() => setIsPlaying(true)}
+                    className={cn(
+                        'group flex w-full items-center',
+                        !isStatic &&
+                            'transition-colors hover:bg-accent focus-visible:bg-accent',
+                    )}
                 >
                     <span className="relative my-2 ml-2 size-20 shrink-0 overflow-hidden rounded-md">
-                        <Thumbnail preview={preview} className="size-full" />
+                        <Thumbnail src={poster} className="size-full" />
                         <span className="absolute inset-0 flex items-center justify-center bg-black/30 text-white transition-colors group-hover:bg-black/40">
                             <Icon className="size-7 fill-current" />
                         </span>
@@ -151,7 +265,7 @@ export function LinkEmbed({
                     <span className="flex min-w-0 flex-1 px-3 py-2">
                         <Details preview={preview} embed={embed} />
                     </span>
-                </button>
+                </PlayTrigger>
             )}
         </div>
     );

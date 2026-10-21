@@ -4,17 +4,13 @@ import { useId, useState } from 'react';
 import CommitApprovalController from '@/actions/App/Http/Controllers/CommitApprovalController';
 import CommitRejectionController from '@/actions/App/Http/Controllers/CommitRejectionController';
 import ModerationController from '@/actions/App/Http/Controllers/ModerationController';
-import { CommitBody } from '@/components/commit-body';
-import { SeriesPosition } from '@/components/commit-card';
 import { CommitFeed, EmptyFeed } from '@/components/commit-feed';
-import { CommitImages } from '@/components/commit-images';
 import InputError from '@/components/input-error';
-import { LinkPreview } from '@/components/link-preview';
 import { ModerationTabs } from '@/components/moderation-tabs';
-import { QuotedCommit } from '@/components/quoted-commit';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { useCommitNotFound } from '@/hooks/use-deleted-resources';
 import { focusCommit } from '@/hooks/use-keyboard-shortcuts';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
@@ -61,49 +57,6 @@ function AiDecision({ commit }: { commit: Commit }) {
             <Bot aria-hidden className="size-4 shrink-0" />
             <span className="truncate">{label}</span>
         </p>
-    );
-}
-
-function SeriesParts({ commit }: { commit: Commit }) {
-    const parts = (commit.series_parts ?? []).filter(
-        (part) => (part.series_position ?? 0) > (commit.series_position ?? 0),
-    );
-
-    if (parts.length === 0) {
-        return null;
-    }
-
-    return (
-        <section aria-label="Rest of the series" className="mt-3">
-            <ol className="space-y-3 border-l-2 border-dashed border-rail pl-3">
-                {parts.map((part) => (
-                    <li key={part.id} data-test="moderation-series-part">
-                        {part.series_position !== null &&
-                            part.series_size !== null && (
-                                <SeriesPosition
-                                    position={part.series_position}
-                                    size={part.series_size}
-                                />
-                            )}
-                        <CommitBody
-                            segments={part.body_segments}
-                            className="mt-1 text-[15px]"
-                        />
-                        <CommitImages commit={part} />
-                        {part.quoted_commit_id !== null && (
-                            <QuotedCommit commit={part.quoted_commit ?? null} />
-                        )}
-                        {part.link_preview && (
-                            <LinkPreview preview={part.link_preview} />
-                        )}
-                        <AiDecision commit={part} />
-                    </li>
-                ))}
-            </ol>
-            <p className="mt-2 text-[13px] text-muted-foreground">
-                Approving or rejecting applies to every part of this series.
-            </p>
-        </section>
     );
 }
 
@@ -222,6 +175,7 @@ export default function Show({
     commits: CursorPaginated<Commit>;
 }) {
     const [isModerating, setIsModerating] = useState(false);
+    const commitNotFound = useCommitNotFound();
 
     const moderate = (
         commit: Commit,
@@ -240,6 +194,7 @@ export default function Show({
                     ? { reason: reason ?? '' }
                     : {},
             preserveScroll: true,
+            only: ['commits', 'hasUnmoderatedCommits'],
             reset: ['commits'],
             onSuccess: () =>
                 requestAnimationFrame(() => {
@@ -254,6 +209,7 @@ export default function Show({
                     }
                 }),
             onFinish: () => setIsModerating(false),
+            onHttpException: (response) => !commitNotFound(commit.id, response),
             onError: (errors) =>
                 onError?.(
                     errors.reason ??
@@ -293,6 +249,7 @@ export default function Show({
         router.visit(ModerationController.update(), {
             data: { commits: selectedIds },
             preserveScroll: true,
+            only: ['commits', 'hasUnmoderatedCommits'],
             reset: ['commits'],
             onStart: () => setApproving(true),
             onSuccess: () => setSelected(new Set()),
@@ -362,12 +319,11 @@ export default function Show({
 
             <CommitFeed
                 commits={commits}
-                firstLane="var(--rail)"
                 end="That's every pending commit."
+                isFolded={false}
                 actions={(commit) => (
                     <>
                         <AiDecision commit={commit} />
-                        <SeriesParts commit={commit} />
                         <ModerationActions
                             isSelected={selected.has(commit.id)}
                             isDisabled={isModerating || approving}

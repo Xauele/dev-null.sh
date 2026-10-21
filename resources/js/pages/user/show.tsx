@@ -6,9 +6,11 @@ import {
     Heart,
     Link2,
     MapPin,
+    MessagesSquare,
 } from 'lucide-react';
 import type { CSSProperties } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import ConversationController from '@/actions/App/Http/Controllers/ConversationController';
 import { show } from '@/actions/App/Http/Controllers/UserController';
 import UserFollowersController from '@/actions/App/Http/Controllers/UserFollowersController';
 import UserFollowingController from '@/actions/App/Http/Controllers/UserFollowingController';
@@ -16,16 +18,30 @@ import { AchievementsDialog } from '@/components/achievements-dialog';
 import { AchievementsShelf } from '@/components/achievements-shelf';
 import { ActivityGraph } from '@/components/activity-graph';
 import { ActivityStreaks } from '@/components/activity-streaks';
+import { BioText } from '@/components/bio-text';
 import { CommitFeed, EmptyFeed } from '@/components/commit-feed';
 import { FollowButton } from '@/components/follow-button';
 import { GitHubIcon } from '@/components/github-icon';
+import {
+    LiveAvatarMarker,
+    LiveStreamTrigger,
+} from '@/components/live-stream-card';
 import { PageTabs } from '@/components/page-tabs';
 import { PinCommitButton } from '@/components/pin-commit-button';
+import { ProfileActionsMenu } from '@/components/profile-actions-menu';
+import { ProfileShareButton } from '@/components/profile-share-button';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/user-avatar';
+import type { UserModeration } from '@/components/user-moderation-menu';
+import {
+    UserModerationMenu,
+    UserModerationStatus,
+} from '@/components/user-moderation-menu';
 import { UserSafetyMenu } from '@/components/user-safety-menu';
+import { refreshSharedState, useSharedState } from '@/hooks/use-shared-state';
 import AppLayout from '@/layouts/app-layout';
-import { laneColor } from '@/lib/utils';
+import { commitStateKey } from '@/lib/commit-state';
+import { dateLocale, laneColor, laneTint } from '@/lib/utils';
 import type {
     Achievements,
     Activity,
@@ -41,9 +57,12 @@ function pluralize(count: number, singular: string, plural: string) {
 
 export default function Show({
     user,
+    pasteisReceived,
     isFollowing,
     followsYou,
     isMuting,
+    canPush,
+    moderation,
     activity,
     streaks,
     achievements,
@@ -52,9 +71,12 @@ export default function Show({
     pinnedCommit,
 }: {
     user: Profile;
+    pasteisReceived: number | null;
     isFollowing: boolean;
     followsYou: boolean;
     isMuting: boolean;
+    canPush: boolean;
+    moderation: UserModeration | null;
     activity: Activity;
     streaks: Streaks;
     achievements: Achievements;
@@ -69,6 +91,23 @@ export default function Show({
         null,
     );
     const [isAchievementsOpen, setIsAchievementsOpen] = useState(false);
+    const [pasteisCount] = useSharedState(
+        commitStateKey('pasteis_received', user.id),
+        pasteisReceived ?? 0,
+    );
+
+    useEffect(() => {
+        if (pasteisReceived !== null) {
+            refreshSharedState(
+                new Map([
+                    [
+                        commitStateKey('pasteis_received', user.id),
+                        pasteisReceived,
+                    ],
+                ]),
+            );
+        }
+    }, [user.id, pasteisReceived]);
 
     return (
         <>
@@ -84,40 +123,100 @@ export default function Show({
 
             <header className="border-b px-4 pt-6 pb-5 sm:px-6">
                 <div className="flex items-start justify-between gap-4">
-                    <UserAvatar
-                        user={user}
-                        className="size-20 text-2xl ring-2 ring-(--lane) ring-offset-4 ring-offset-card"
-                        style={{ '--lane': lane } as CSSProperties}
-                    />
-
-                    {isCurrentUser ? (
-                        <Button variant="outline" asChild>
+                    {user.live ? (
+                        <LiveStreamTrigger
+                            user={user}
+                            showProfile={false}
+                            className="flex"
+                        >
                             <a
-                                href="https://github.com/settings/profile"
+                                href={user.live.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
+                                aria-label={`Watch ${user.name} live on ${user.live.url.includes('twitch.tv') ? 'Twitch' : 'YouTube'}`}
+                                className="relative flex rounded-full"
+                                data-test="profile-live-avatar"
                             >
-                                Edit on GitHub
-                                <ArrowUpRight />
-                            </a>
-                        </Button>
-                    ) : (
-                        <div className="flex gap-2">
-                            {auth.user && (
-                                <UserSafetyMenu
+                                <UserAvatar
                                     user={user}
-                                    isMuting={isMuting}
-                                    isBlocking={false}
+                                    className="size-20 text-2xl ring-2 ring-red-600 ring-offset-4 ring-offset-card"
+                                    pixels={160}
                                 />
-                            )}
-                            <FollowButton
-                                user={user}
-                                isFollowing={isFollowing}
-                                className="min-w-28"
-                                onSuccess={() => router.flushAll()}
-                            />
-                        </div>
+                                <LiveAvatarMarker className="-bottom-2.5" />
+                            </a>
+                        </LiveStreamTrigger>
+                    ) : (
+                        <UserAvatar
+                            user={user}
+                            className="size-20 text-2xl ring-2 ring-(--lane) ring-offset-4 ring-offset-card"
+                            pixels={160}
+                            style={{ '--lane': lane } as CSSProperties}
+                        />
                     )}
+
+                    <div className="flex shrink-0 gap-1.5 sm:gap-2">
+                        <ProfileShareButton
+                            username={user.username}
+                            href={show(user).url}
+                        />
+                        {isCurrentUser ? (
+                            <>
+                                <ProfileActionsMenu user={user} />
+                                <Button variant="outline" asChild>
+                                    <a
+                                        href="https://github.com/settings/profile"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        Edit on GitHub
+                                        <ArrowUpRight />
+                                    </a>
+                                </Button>
+                            </>
+                        ) : (
+                            <>
+                                {moderation && (
+                                    <UserModerationMenu
+                                        user={user}
+                                        moderation={moderation}
+                                    />
+                                )}
+                                {auth.user && (
+                                    <UserSafetyMenu
+                                        user={user}
+                                        isMuting={isMuting}
+                                        isBlocking={false}
+                                    />
+                                )}
+                                {canPush && (
+                                    <Button
+                                        variant="outline"
+                                        className="sm:min-w-24"
+                                        asChild
+                                    >
+                                        <Link
+                                            href={ConversationController.show(
+                                                user,
+                                            )}
+                                            aria-label={`Remote @${user.username}`}
+                                            data-test="profile-remote"
+                                        >
+                                            <MessagesSquare />
+                                            <span className="hidden sm:inline">
+                                                Remote
+                                            </span>
+                                        </Link>
+                                    </Button>
+                                )}
+                                <FollowButton
+                                    user={user}
+                                    isFollowing={isFollowing}
+                                    className="min-w-28"
+                                    onSuccess={() => router.flushAll()}
+                                />
+                            </>
+                        )}
+                    </div>
                 </div>
 
                 <h1 className="mt-4 text-2xl font-semibold tracking-tight text-balance">
@@ -145,10 +244,10 @@ export default function Show({
                     <button
                         type="button"
                         onClick={() => setIsAchievementsOpen(true)}
-                        className="inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px] font-medium transition hover:brightness-110"
+                        className="inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium transition hover:brightness-110"
                         style={{
-                            borderColor: `${lane}40`,
-                            backgroundColor: `${lane}15`,
+                            borderColor: laneTint(lane, 25),
+                            backgroundColor: laneTint(lane, 8),
                             color: lane,
                         }}
                         title="View achievements and Unix rank"
@@ -159,9 +258,11 @@ export default function Show({
                     </button>
                 </div>
 
+                {moderation && <UserModerationStatus moderation={moderation} />}
+
                 {user.bio && (
-                    <p className="mt-3 max-w-prose text-[15px] leading-relaxed break-words whitespace-pre-wrap">
-                        {user.bio}
+                    <p className="mt-3 max-w-prose text-[15px] leading-relaxed wrap-break-word whitespace-pre-wrap">
+                        <BioText bio={user.bio} />
                     </p>
                 )}
 
@@ -169,7 +270,9 @@ export default function Show({
                     {user.company && (
                         <li className="flex items-center gap-1.5">
                             <Building2 className="size-4" />
-                            {user.company}
+                            <span>
+                                <BioText bio={user.company} />
+                            </span>
                         </li>
                     )}
                     {user.location && (
@@ -191,17 +294,19 @@ export default function Show({
                             </a>
                         </li>
                     )}
-                    <li className="flex items-center gap-1.5">
-                        <GitHubIcon className="size-4" />
-                        <a
-                            href={`https://github.com/${user.username}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hover:underline"
-                        >
-                            github.com/{user.username}
-                        </a>
-                    </li>
+                    {user.has_github_account && (
+                        <li className="flex items-center gap-1.5">
+                            <GitHubIcon className="size-4" />
+                            <a
+                                href={`https://github.com/${user.username}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline"
+                            >
+                                github.com/{user.username}
+                            </a>
+                        </li>
+                    )}
                     {user.has_sponsors_listing && (
                         <li className="flex items-center gap-1.5">
                             <Heart className="size-4" />
@@ -219,7 +324,7 @@ export default function Show({
                         <CalendarDays className="size-4" />
                         Joined{' '}
                         {new Date(user.created_at).toLocaleDateString(
-                            undefined,
+                            dateLocale,
                             { month: 'long', year: 'numeric' },
                         )}
                     </li>
@@ -274,6 +379,24 @@ export default function Show({
                         </div>
                     ))}
                 </dl>
+                {auth.pasteis && pasteisReceived !== null && (
+                    <p
+                        className="mt-3 flex items-center gap-1.5 text-sm text-muted-foreground"
+                        data-test="profile-pasteis-count"
+                    >
+                        <img
+                            src="/pastel-de-nata.svg"
+                            alt=""
+                            width={20}
+                            height={20}
+                            className="size-5 shrink-0 object-contain"
+                        />
+                        <span className="font-mono font-medium text-foreground tabular-nums">
+                            {pasteisCount}
+                        </span>
+                        {pluralize(pasteisCount, 'pastel', 'pastéis')} received
+                    </p>
+                )}
             </header>
 
             <ActivityGraph
@@ -298,66 +421,70 @@ export default function Show({
                 lane={lane}
             />
 
-            <PageTabs
-                label="Profile feed"
-                preserveScroll
-                tabs={[
-                    {
-                        title: 'Commits',
-                        href: show(user),
-                        isActive: tab === 'commits',
-                    },
-                    {
-                        title: 'Replies',
-                        href: show(user, { query: { tab: 'replies' } }),
-                        isActive: tab === 'replies',
-                    },
-                ]}
-            />
+            <div className="min-h-dvh">
+                <PageTabs
+                    label="Profile feed"
+                    preserveScroll
+                    only={['tab', 'commits', 'pinnedCommit']}
+                    reset={['commits']}
+                    tabs={[
+                        {
+                            title: 'Commits',
+                            href: show(user),
+                            isActive: tab === 'commits',
+                        },
+                        {
+                            title: 'Replies',
+                            href: show(user, { query: { tab: 'replies' } }),
+                            isActive: tab === 'replies',
+                        },
+                    ]}
+                />
 
-            <CommitFeed
-                key={`${user.id}:${tab}`}
-                commits={commits}
-                pinnedCommit={tab === 'commits' ? pinnedCommit : null}
-                threadActions={
-                    isCurrentUser && tab === 'commits'
-                        ? (commit) => (
-                              <PinCommitButton
-                                  commit={commit}
-                                  isPinned={commit.id === pinnedCommit?.id}
-                              />
-                          )
-                        : undefined
-                }
-                highlightedPeriod={highlightedPeriod}
-                end={
-                    tab === 'replies'
-                        ? isCurrentUser
-                            ? 'That was your first reply.'
-                            : `That's @${user.username}'s first reply.`
-                        : isCurrentUser
-                          ? 'That was your first commit. Everyone starts somewhere.'
-                          : `That's @${user.username}'s root commit.`
-                }
-                empty={
-                    tab === 'replies' ? (
-                        <EmptyFeed command="fatal: no replies yet">
-                            {isCurrentUser
-                                ? 'Your replies show up here. Join a conversation from your log.'
-                                : `@${user.username} hasn't replied to anything yet.`}
-                        </EmptyFeed>
-                    ) : isCurrentUser ? (
-                        <EmptyFeed command="fatal: you do not have any commits yet">
-                            Your commits show up here. Make your first one from
-                            your log.
-                        </EmptyFeed>
-                    ) : (
-                        <EmptyFeed command="fatal: no commits yet">
-                            @{user.username} hasn't committed anything yet.
-                        </EmptyFeed>
-                    )
-                }
-            />
+                <CommitFeed
+                    key={`${user.id}:${tab}`}
+                    commits={commits}
+                    pinnedCommit={tab === 'commits' ? pinnedCommit : null}
+                    threadActions={
+                        isCurrentUser && tab === 'commits'
+                            ? (commit) => (
+                                  <PinCommitButton
+                                      commit={commit}
+                                      isPinned={commit.id === pinnedCommit?.id}
+                                  />
+                              )
+                            : undefined
+                    }
+                    highlightedPeriod={highlightedPeriod}
+                    end={
+                        tab === 'replies'
+                            ? isCurrentUser
+                                ? 'That was your first reply.'
+                                : `That's @${user.username}'s first reply.`
+                            : isCurrentUser
+                              ? 'That was your first commit. Everyone starts somewhere.'
+                              : `That's @${user.username}'s root commit.`
+                    }
+                    empty={
+                        tab === 'replies' ? (
+                            <EmptyFeed command="fatal: no replies yet">
+                                {isCurrentUser
+                                    ? 'Your replies show up here. Join a conversation from your log.'
+                                    : `@${user.username} hasn't replied to anything yet.`}
+                            </EmptyFeed>
+                        ) : isCurrentUser ? (
+                            <EmptyFeed command="fatal: you do not have any commits yet">
+                                Your commits show up here. Make your first one
+                                from your log.
+                            </EmptyFeed>
+                        ) : (
+                            <EmptyFeed command="fatal: no commits yet">
+                                @{user.username} hasn't committed anything yet.
+                            </EmptyFeed>
+                        )
+                    }
+                />
+            </div>
         </>
     );
 }

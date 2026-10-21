@@ -30,7 +30,7 @@ export function GuestComposer() {
                 }
             />
 
-            <div className="min-w-0 flex-1 pt-4 pr-4 pb-4">
+            <div className="min-w-0 flex-1 py-4 pr-4">
                 <h2
                     id="guest-composer"
                     className="text-[17px] leading-snug font-semibold tracking-tight text-balance"
@@ -39,7 +39,7 @@ export function GuestComposer() {
                 </h2>
                 <p className="mt-1 text-[15px] text-pretty text-muted-foreground">
                     Everyone below signed in with GitHub and committed plain
-                    text, 280 characters at a time. Your turn.
+                    text. Your turn.
                 </p>
 
                 <a

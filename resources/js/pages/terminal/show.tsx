@@ -26,7 +26,7 @@ const workflow = [
 ].join('\n');
 
 const inputs = [
-    { name: 'body', description: 'The commit, 3 to 280 characters.' },
+    { name: 'body', description: 'The commit, up to 4,000 characters.' },
     {
         name: 'ssh-key',
         description:
@@ -35,6 +35,11 @@ const inputs = [
     {
         name: 'reply-to',
         description: 'Optional. The hash or link of a commit to reply to.',
+    },
+    {
+        name: 'images',
+        description:
+            'Optional. Paths of JPEG, PNG or WebP files to attach, one per line, up to 3.',
     },
 ];
 
@@ -57,6 +62,10 @@ export default function Show({ url }: { url: string }) {
                     <CopyableCode
                         label="reply command"
                         code={`curl -fsSL ${url}/commit | bash -s -- --reply 0be0130 'Agreed!'`}
+                    />
+                    <CopyableCode
+                        label="image command"
+                        code={`curl -fsSL ${url}/commit | bash -s -- --image shipped.png 'Shipped!'`}
                     />
                 </div>
             </section>

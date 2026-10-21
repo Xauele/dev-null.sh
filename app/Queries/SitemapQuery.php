@@ -4,14 +4,11 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
-use App\Enums\CommitStatus;
 use App\Models\Commit;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use stdClass;
 
 final readonly class SitemapQuery
 {
@@ -31,47 +28,65 @@ final readonly class SitemapQuery
     }
 
     /**
-     * @return EloquentCollection<int, User>
+     * Read as plain rows rather than models, since a page lists thousands of them.
+     *
+     * @return list<array{username: string, updated_at: CarbonImmutable}>
      */
-    public function usersOn(int $page): EloquentCollection
+    public function usersOn(int $page): array
     {
-        return $this->users()
-            ->select(['id', 'username', 'updated_at'])
+        /** @var list<object{username: string, updated_at: string}> $users */
+        $users = $this->users()
             ->orderBy('id')
             ->forPage($page, self::PER_PAGE)
-            ->get();
+            ->toBase()
+            ->get(['username', 'updated_at'])
+            ->all();
+
+        return array_map(fn (object $user): array => [
+            'username' => $user->username,
+            'updated_at' => CarbonImmutable::parse($user->updated_at),
+        ], $users);
     }
 
     /**
-     * Sitemaps need only a few scalar columns. Avoid hydrating 10,000 Eloquent
-     * models and their user relations on every request.
+     * Read as plain rows rather than models, with the author and the images in the same query, since a page lists
+     * thousands of them.
      *
-     * @return Collection<int, stdClass>
+     * @return list<array{id: string, username: string, updated_at: CarbonImmutable, image_ids: list<string>}>
      */
-    public function commitsOn(int $page): Collection
+    public function commitsOn(int $page): array
     {
-        return DB::table('commits')
+        $onPage = $this->commits()
+            ->select(['id', 'user_id', 'updated_at'])
+            ->orderBy('id')
+            ->forPage($page, self::PER_PAGE);
+
+        /** @var list<object{id: string, username: string, updated_at: string, image_id: string|null}> $rows */
+        $rows = DB::query()
+            ->fromSub($onPage, 'commits')
             ->join('users', 'users.id', '=', 'commits.user_id')
-            ->where('commits.status', CommitStatus::Approved->value)
-            ->whereNull('commits.deleted_at')
+            ->leftJoin('commit_images', 'commit_images.commit_id', '=', 'commits.id')
             ->orderBy('commits.id')
-            ->forPage($page, self::PER_PAGE)
-            ->get(['commits.id', 'commits.updated_at', 'users.username']);
-    }
+            ->orderBy('commit_images.position')
+            ->get(['commits.id', 'users.username', 'commits.updated_at', 'commit_images.id as image_id'])
+            ->all();
 
-    /**
-     * Fetch all images for the page with one query rather than one per commit.
-     *
-     * @param array<int, string> $commitIds
-     * @return Collection<int, stdClass>
-     */
-    public function imagesFor(array $commitIds): Collection
-    {
-        return DB::table('commit_images')
-            ->whereIn('commit_id', $commitIds)
-            ->orderBy('commit_id')
-            ->orderBy('position')
-            ->get(['id', 'commit_id']);
+        $commits = [];
+
+        foreach ($rows as $row) {
+            $commits[$row->id] ??= [
+                'id' => $row->id,
+                'username' => $row->username,
+                'updated_at' => CarbonImmutable::parse($row->updated_at),
+                'image_ids' => [],
+            ];
+
+            if ($row->image_id !== null) {
+                $commits[$row->id]['image_ids'][] = $row->image_id;
+            }
+        }
+
+        return array_values($commits);
     }
 
     /**

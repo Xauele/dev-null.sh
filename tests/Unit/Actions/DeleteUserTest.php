@@ -2,25 +2,35 @@
 
 declare(strict_types=1);
 
+use App\Actions\CreateCommitTranslation;
 use App\Actions\DeleteUser;
 use App\Actions\UpdateCommitHotScores;
+use App\Ai\Agents\CommitTranslator;
 use App\Models\Commit;
 use App\Models\CommitImage;
+use App\Models\Device;
+use App\Models\LinkPreview;
+use App\Models\Message;
+use App\Models\MessageImage;
 use App\Models\Poll;
 use App\Models\PollOption;
 use App\Models\PollVote;
 use App\Models\User;
+use App\Services\CommitTranslations;
 use App\Services\TheAlgorithm;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 it('may delete a user', function (): void {
-    $user = User::factory()->create();
+    $user = User::factory()->create(['translation_language' => 'ja']);
 
     $action = resolve(DeleteUser::class);
 
     $action->handle($user);
 
     expect($user->exists)->toBeFalse();
+    $this->assertModelMissing($user);
 });
 
 it('erases the commits of a deleted user along with the replies under them', function (): void {
@@ -64,6 +74,55 @@ it('leaves a tombstone for a reply of a deleted user that other people replied t
         ->and(Commit::withTrashed()->whereKey($nestedReply->id)->exists())->toBeFalse();
 });
 
+it('erases what a deleted user wrote from the tombstones they leave', function (): void {
+    $user = User::factory()->create();
+    $mentioned = User::factory()->create();
+    $commit = Commit::factory()->create();
+    $reply = Commit::factory()->for($user)->for($commit, 'parent')->for(LinkPreview::factory())->create([
+        'body' => "@{$mentioned->username} have a look at https://example.com",
+        'mentions' => [$mentioned->username => $mentioned->id],
+        'embedding' => embeddingVector(0),
+    ]);
+    $deletedReply = Commit::factory()->for($user)->for($commit, 'parent')->create();
+    Commit::factory()->for($reply, 'parent')->create();
+    Commit::factory()->for($deletedReply, 'parent')->create();
+    $deletedReply->delete();
+
+    resolve(DeleteUser::class)->handle($user);
+
+    $tombstones = Commit::withTrashed()->whereKey([$reply->id, $deletedReply->id]);
+
+    expect($tombstones->count())->toBe(2)
+        ->and($tombstones->pluck('body')->all())->toBe(['', ''])
+        ->and($tombstones->pluck('mentions')->all())->toBe([null, null])
+        ->and($tombstones->pluck('embedding')->all())->toBe([null, null])
+        ->and($tombstones->pluck('link_preview_id')->all())->toBe([null, null]);
+});
+
+it('erases what deleted accounts wrote from the tombstones they already left', function (): void {
+    $mentioned = User::factory()->create();
+    $orphan = Commit::factory()->for(LinkPreview::factory())->create([
+        'user_id' => null,
+        'mentions' => [$mentioned->username => $mentioned->id],
+        'embedding' => embeddingVector(0),
+        'deleted_at' => now(),
+    ]);
+    $deleted = Commit::factory()->create(['deleted_at' => now()]);
+    $live = Commit::factory()->create();
+
+    $migration = require database_path('migrations/2026_10_20_092957_erase_the_body_of_orphaned_commits.php');
+    $migration->up();
+
+    $tombstone = Commit::withTrashed()->whereKey($orphan->id);
+
+    expect($tombstone->value('body'))->toBe('')
+        ->and($tombstone->value('mentions'))->toBeNull()
+        ->and($tombstone->value('embedding'))->toBeNull()
+        ->and($tombstone->value('link_preview_id'))->toBeNull()
+        ->and(Commit::withTrashed()->whereKey($deleted->id)->value('body'))->toBe($deleted->body)
+        ->and(Commit::withTrashed()->whereKey($live->id)->value('body'))->toBe($live->body);
+});
+
 it('erases the replies of a deleted user that only have their own replies under them', function (): void {
     $user = User::factory()->create();
     $commit = Commit::factory()->create();
@@ -77,7 +136,7 @@ it('erases the replies of a deleted user that only have their own replies under 
 
 });
 
-it('erases the mutes and blocks of a deleted user in both directions', function (): void {
+it('erases the mutes, blocks and dismissed suggestions of a deleted user in both directions', function (): void {
     $user = User::factory()->create();
     $other = User::factory()->create();
 
@@ -85,12 +144,16 @@ it('erases the mutes and blocks of a deleted user in both directions', function 
     $other->muting()->attach($user);
     $user->blocking()->attach($other);
     $other->blocking()->attach($user);
+    $user->dismissedSuggestions()->attach($other);
+    $other->dismissedSuggestions()->attach($user);
 
     resolve(DeleteUser::class)->handle($user);
 
     expect($other->muting()->count())->toBe(0)
         ->and($other->blocking()->count())->toBe(0)
-        ->and($other->blockers()->count())->toBe(0);
+        ->and($other->blockers()->count())->toBe(0)
+        ->and($other->dismissedSuggestions()->count())->toBe(0)
+        ->and(DB::table('suggestion_dismissals')->count())->toBe(0);
 
 });
 
@@ -109,6 +172,16 @@ it('erases authored polls and the users votes while keeping other polls and vote
     expect(Poll::query()->sole()->is($other))->toBeTrue()
         ->and(PollOption::query()->pluck('id')->sort()->values()->all())->toBe($other->options->pluck('id')->sort()->values()->all())
         ->and(PollVote::query()->sole()->is($keptVote))->toBeTrue();
+});
+
+it('erases the devices of a deleted user', function (): void {
+    $user = User::factory()->create();
+    Device::factory()->for($user)->create();
+    $other = Device::factory()->create();
+
+    resolve(DeleteUser::class)->handle($user);
+
+    expect(Device::query()->pluck('id')->all())->toBe([$other->id]);
 });
 
 it('erases the images of a deleted user and of the replies under their commits', function (): void {
@@ -132,6 +205,21 @@ it('erases the images of a deleted user and of the replies under their commits',
 
     expect(collect(Storage::disk()->allFiles('commit-images'))->sort()->values()->all())->toBe($kept)
         ->and(CommitImage::query()->pluck('path')->sort()->values()->all())->toBe($kept);
+});
+
+it('erases the images a deleted user sent in remotes, keeping the images sent to them', function (): void {
+    Storage::fake();
+
+    $user = User::factory()->create();
+    $sent = MessageImage::factory()->for(Message::factory()->for($user))->create();
+    $received = MessageImage::factory()->create();
+    Storage::disk()->put($sent->path, 'image');
+    Storage::disk()->put($received->path, 'image');
+
+    resolve(DeleteUser::class)->handle($user);
+
+    expect(Storage::disk()->allFiles('message-images'))->toBe([$received->path])
+        ->and(MessageImage::query()->pluck('id')->all())->toBe([$received->id]);
 });
 
 it('lowers the threads the deleted user starred or replied to', function (): void {
@@ -160,4 +248,51 @@ it('lowers the threads the deleted user quoted', function (): void {
 
     expect($commit->fresh()->hot_score)
         ->toEqualWithDelta(resolve(TheAlgorithm::class)->score($commit->created_at, 0, 0), 1e-9);
+});
+
+it('erases however many commits a user has without listing them in its queries', function (): void {
+    Storage::fake();
+
+    $user = User::factory()->create();
+    $commits = Commit::factory()->for($user)->count(10)->create();
+    $commits->each(fn (Commit $commit): Commit => Commit::factory()->for($commit, 'parent')->create());
+
+    $repliedTo = Commit::factory()->create();
+    $otherReply = Commit::factory()->for(Commit::factory()->for($user)->for($repliedTo, 'parent'), 'parent')->create();
+
+    DB::enableQueryLog();
+
+    resolve(DeleteUser::class)->handle($user);
+
+    expect(collect(DB::getQueryLog())->max(fn (array $query): int => count($query['bindings'])))->toBeLessThan(10)
+        ->and(Commit::query()->pluck('id')->sort()->values()->all())->toBe(collect([$repliedTo->id, $otherReply->id])->sort()->values()->all());
+});
+
+it('erases cached translations of the user and replies in their deleted threads', function (): void {
+    CommitTranslator::fake([
+        ['source_language' => 'de', 'body' => 'Good morning'],
+        ['source_language' => 'nl', 'body' => 'Good evening'],
+    ]);
+    $user = User::factory()->create();
+    $commit = Commit::factory()->for($user)->create(['body' => 'Guten morgen']);
+    Commit::factory()->for($user)->count(500)->create(['body' => 'Other posts']);
+    $reply = Commit::factory()->for($commit, 'parent')->create(['body' => 'Goedenavond', 'root_id' => $commit->id]);
+    $unrelated = Commit::factory()->create(['body' => 'Unrelated post']);
+    resolve(CreateCommitTranslation::class)->handle($commit, 'en');
+    resolve(CreateCommitTranslation::class)->handle($reply, 'en');
+
+    $unrelatedKey = resolve(CommitTranslations::class)->key($unrelated);
+    Cache::put($unrelatedKey, ['source_language' => 'en', 'translations' => [], 'expires_at' => now()->addDay()->getTimestamp()], 60);
+
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    resolve(DeleteUser::class)->handle($user);
+    $bodyReads = collect(DB::getQueryLog())->filter(fn (array $query): bool => str_contains($query['query'], 'select "id", "body" from "commits"'));
+    DB::disableQueryLog();
+
+    expect(resolve(CommitTranslations::class)->cached($commit))->toBeNull()
+        ->and(resolve(CommitTranslations::class)->cached($reply))->toBeNull()
+        ->and(Cache::has($unrelatedKey))->toBeTrue()
+        ->and($bodyReads)->toHaveCount(2);
+    $this->assertModelMissing($user);
 });

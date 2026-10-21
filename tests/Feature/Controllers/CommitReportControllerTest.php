@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Enums\CommitStatus;
-use App\Models\Bookmark;
 use App\Models\Commit;
 use App\Models\CommitImage;
 use App\Models\CommitReport;
@@ -99,7 +98,6 @@ it('includes reported polls with viewer specific results and card state', functi
     $poll = ($closed ? $factory->closed() : $factory)->create();
     PollVote::factory()->for($poll->options[0], 'option')->for($voted ? $moderator : User::factory())->create();
     $poll->commit->stars()->attach($moderator);
-    Bookmark::factory()->create(['user_id' => $moderator->id, 'commit_id' => $poll->commit_id]);
     CommitReport::factory()->for($poll->commit)->create();
 
     $this->actingAs($moderator)->get(route('reported-commit.index'))
@@ -107,7 +105,6 @@ it('includes reported polls with viewer specific results and card state', functi
         ->assertInertia(fn ($page) => $page
             ->where('reports.data.0.commit.poll.options.0.label', 'Tabs')
             ->where('reports.data.0.commit.starred', true)
-            ->where('reports.data.0.commit.is_saved', true)
             ->where('reports.data.0.commit.poll.has_voted', $voted)
             ->where('reports.data.0.commit.poll.is_closed', $closed)
             ->where('reports.data.0.commit.poll.total_votes', $voted || $closed ? 1 : null)
@@ -361,57 +358,6 @@ it('rejects the original using existing moderation and removes all its reports f
     $this->get(route('user-feed.show', $report->commit->user))->assertOk()->assertDontSee($report->commit->body);
     $this->actingAs($report->commit->user)->get(route('commit.show', [$report->commit->user, $report->commit]))->assertOk();
 });
-
-it('privately reports any series part and rejects the entire reported series', function (int $index): void {
-    $parts = commitSeries();
-    $reporter = User::factory()->create();
-    $admin = User::factory()->create(['username' => 'moderator-demo']);
-
-    $this->actingAs($reporter)
-        ->post(route('commit-report.store', $parts[$index]), ['reason' => 'spam', 'details' => 'Private series report.'])
-        ->assertRedirect();
-
-    $report = CommitReport::query()->sole();
-    expect($report->commit_id)->toBe($parts[$index]->id)
-        ->and($parts->fresh()->pluck('status')->unique()->all())->toBe([CommitStatus::Approved]);
-
-    foreach ($parts as $part) {
-        $this->getJson(route('api-commit.show', $part))->assertOk()
-            ->assertJsonMissingPath('data.reports')
-            ->assertDontSee($report->details);
-    }
-
-    $this->getJson(route('api-user-commit.index', $parts[0]->user))->assertOk()
-        ->assertJsonPath('data.*.id', [$parts[0]->id])
-        ->assertDontSee($report->details);
-    $this->get(route('user-feed.show', $parts[0]->user))->assertOk()
-        ->assertSee($parts[0]->body)
-        ->assertDontSee($parts[1]->body)
-        ->assertDontSee($parts[2]->body)
-        ->assertDontSee($report->details);
-
-    $this->actingAs($admin)->get(route('reported-commit.index'))->assertOk()
-        ->assertInertia(fn ($page) => $page->has('reports.data', 1)
-            ->where('reports.data.0.commit.id', $parts[$index]->id)
-            ->where('reports.data.0.commit.series_position', $index + 1)
-            ->missing('reports.data.0.reporter_id'));
-
-    $this->fromRoute('reported-commit.index')
-        ->post(route('commit-rejection.store', $parts[$index]))
-        ->assertRedirectToRoute('reported-commit.index');
-
-    expect($parts->fresh()->pluck('status')->unique()->all())->toBe([CommitStatus::Rejected]);
-    $this->get(route('reported-commit.index'))->assertInertia(fn ($page) => $page->has('reports.data', 0));
-
-    $this->actingAs($reporter);
-    foreach ($parts as $part) {
-        $this->getJson(route('api-commit.show', $part))->assertNotFound();
-        $this->post(route('commit-report.store', $part), ['reason' => 'spam'])->assertNotFound();
-    }
-
-    $this->getJson(route('api-user-commit.index', $parts[0]->user))->assertOk()->assertJsonCount(0, 'data');
-    $this->get(route('user-feed.show', $parts[0]->user))->assertOk()->assertDontSee($parts[0]->body);
-})->with([0, 1, 2]);
 
 it('does not resolve reports on deleted content', function (): void {
     $report = CommitReport::factory()->create();

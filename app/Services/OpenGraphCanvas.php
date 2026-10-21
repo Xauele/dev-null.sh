@@ -55,7 +55,9 @@ final readonly class OpenGraphCanvas
 
     public function lane(User $user): int
     {
-        return self::LANES[$user->lane()];
+        $lane = $user->lane();
+
+        return is_string($lane) ? (int) hexdec(mb_substr($lane, 1)) : self::LANES[$lane];
     }
 
     /**
@@ -127,7 +129,7 @@ final readonly class OpenGraphCanvas
 
         $offset = (int) round($size * 0.875);
 
-        $this->text($this->truncate('@'.$user->username, 'GeistMono-Regular', $size, $width - $offset), 'GeistMono-Regular', $size, $x + $offset, $y, self::INK_MUTED);
+        $this->text($this->truncate($user->mention(), 'GeistMono-Regular', $size, $width - $offset), 'GeistMono-Regular', $size, $x + $offset, $y, self::INK_MUTED);
     }
 
     /**

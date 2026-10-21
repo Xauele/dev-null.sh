@@ -6,7 +6,7 @@ namespace App\Models;
 
 use App\Enums\CommitStatus;
 use App\Queries\CommitBuilder;
-use App\Services\CodeSpans;
+use App\Services\CommitBodies;
 use Carbon\CarbonInterface;
 use Database\Factories\CommitFactory;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -29,12 +29,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property-read string|null $root_id
  * @property-read float $hot_score
  * @property-read string $body
+ * @property-read array<string, string>|null $mentions
  * @property-read CommitStatus $status
  * @property-read string|null $link_preview_id
  * @property-read string|null $quoted_commit_id
- * @property-read string|null $series_id
- * @property-read int|null $series_position
- * @property-read int|null $series_size
  * @property-read CommitStatus|null $ai_decision
  * @property-read list<string>|null $ai_categories
  * @property-read list<float>|null $embedding
@@ -42,6 +40,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property-read CarbonInterface $updated_at
  * @property-read CarbonInterface|null $deleted_at
  * @property-read int $stars_count
+ * @property-read int $pasteis_count
  * @property-read bool $starred
  * @property-read User|null $user
  * @property-read Collection<int, User> $stars
@@ -49,13 +48,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property-read Collection<int, Commit> $replies
  * @property-read int $replies_count
  * @property-read int|null $repliers_count
- * @property-read bool $is_saved
+ * @property-read string|null $continuation_id
  * @property-read LinkPreview|null $linkPreview
  * @property-read Poll|null $poll
  * @property-read Commit|null $quotedCommit
  * @property-read Collection<int, Commit> $quotes
  * @property-read Collection<int, CommitImage> $images
- * @property-read Collection<int, Commit> $seriesParts
  */
 #[Hidden([
     'ai_decision',
@@ -74,6 +72,35 @@ final class Commit extends Model
     public const int RESTORABLE_SECONDS = 30;
 
     /**
+     * Moderation retries a failed check twice, the last time ten minutes later, so a pending commit older than this has
+     * been through every attempt.
+     */
+    public const int CHECKING_MINUTES = 15;
+
+    public const int MIN_BODY_LENGTH = 1;
+
+    public const int MAX_BODY_LENGTH = 4000;
+
+    /**
+     * Lists show a longer body folded to its first characters and lines, the rest one click away.
+     */
+    public const int PREVIEW_LENGTH = 280;
+
+    public const int PREVIEW_LINES = 8;
+
+    /**
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'pasteis_count' => 0,
+    ];
+
+    /**
+     * @var array{body_segments: list<array<string, string|null>>, preview_segments: list<array<string, string|null>>|null}|null
+     */
+    private ?array $segments = null;
+
+    /**
      * @return array<string, string>
      */
     public function casts(): array
@@ -84,13 +111,12 @@ final class Commit extends Model
             'parent_id' => 'string',
             'root_id' => 'string',
             'hot_score' => 'float',
+            'pasteis_count' => 'integer',
             'body' => 'string',
+            'mentions' => 'array',
             'status' => CommitStatus::class,
             'link_preview_id' => 'string',
             'quoted_commit_id' => 'string',
-            'series_id' => 'string',
-            'series_position' => 'integer',
-            'series_size' => 'integer',
             'ai_decision' => CommitStatus::class,
             'ai_categories' => 'array',
             'embedding' => AsVector::class,
@@ -101,20 +127,25 @@ final class Commit extends Model
     }
 
     /**
-     * A deleted commit only ever leaves a tombstone behind: never its author or body, though a deleted part of a series
-     * keeps its place in it. Otherwise, the body also comes split into prose, inline code and highlighted code blocks, for rendering.
+     * A deleted commit only ever leaves a tombstone behind: never its author or body. Otherwise, the body also comes split
+     * into segments, for rendering, and whether it is still being checked, so its author knows how long it might stay
+     * pending.
      *
      * @return array<mixed>
      */
     public function toArray(): array
     {
         if ($this->trashed()) {
-            $keys = ['id', 'parent_id', 'deleted_at', 'replies_count', ...($this->series_id === null ? [] : ['series_position', 'series_size'])];
+            $keys = ['id', 'parent_id', 'deleted_at', 'replies_count'];
 
             return array_intersect_key($this->attributesToArray(), array_flip($keys));
         }
 
-        return [...parent::toArray(), 'body_segments' => resolve(CodeSpans::class)->highlight($this->body)];
+        if ($this->segments === null || $this->isDirty('body')) {
+            $this->segments = resolve(CommitBodies::class)->segments($this->body);
+        }
+
+        return [...parent::toArray(), ...$this->segments, 'is_checking' => $this->isBeingChecked()];
     }
 
     /**
@@ -133,6 +164,11 @@ final class Commit extends Model
         return $this->belongsToMany(User::class, 'stars')->withTimestamps();
     }
 
+    public function isAddressedTo(User $user): bool
+    {
+        return in_array($user->id, $this->mentions ?? [], true) || $this->parent?->user_id === $user->id;
+    }
+
     /**
      * Approved commits are visible to everyone but people across a block. Authors can also see their own.
      */
@@ -144,6 +180,18 @@ final class Commit extends Model
 
         return $this->status === CommitStatus::Approved
             && (! $user instanceof User || ! $this->user instanceof User || ! $user->hasBlockWith($this->user));
+    }
+
+    /**
+     * A pending commit is being checked until its moderation job leaves an AI decision behind. After that, or once every
+     * attempt has had its chance, it simply waits for a moderator.
+     */
+    public function isBeingChecked(): bool
+    {
+        return $this->status === CommitStatus::Pending
+            && $this->ai_decision === null
+            && filled(config('services.openai.key'))
+            && $this->created_at->greaterThan(now()->subMinutes(self::CHECKING_MINUTES));
     }
 
     public function isRestorable(): bool
@@ -173,32 +221,6 @@ final class Commit extends Model
     public function replies(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id');
-    }
-
-    /**
-     * Every part of the series the commit belongs to, the commit included.
-     *
-     * @return HasMany<Commit, $this>
-     */
-    public function seriesParts(): HasMany
-    {
-        return $this->hasMany(self::class, 'series_id', 'series_id');
-    }
-
-    /**
-     * Later parts of a series are replies to the part before them, yet they read as part of it rather than as replies.
-     */
-    public function isSeriesContinuation(): bool
-    {
-        return $this->series_position !== null && $this->series_position > 1;
-    }
-
-    /**
-     * @return HasMany<Bookmark, $this>
-     */
-    public function bookmarks(): HasMany
-    {
-        return $this->hasMany(Bookmark::class);
     }
 
     /**
@@ -275,10 +297,10 @@ final class Commit extends Model
      */
     public function openGraphImageVersion(): string
     {
-        return hash('xxh3', implode(':', [
-            $this->updated_at->getTimestamp(),
+        return hash('xxh3', (string) json_encode([
+            $this->body,
             $this->replies_count,
-            $this->user?->updated_at->getTimestamp(),
+            $this->user?->openGraphIdentity(),
             $this->parent?->user?->username,
         ]));
     }

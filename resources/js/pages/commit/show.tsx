@@ -3,25 +3,37 @@ import { ArrowLeft } from 'lucide-react';
 import LogController from '@/actions/App/Http/Controllers/LogController';
 import { CommitCard, CommitTombstone } from '@/components/commit-card';
 import { CopyLinkButton } from '@/components/copy-link-button';
+import { useContinuation } from '@/hooks/use-continuation';
 import AppLayout from '@/layouts/app-layout';
 import { isDeleted, laneOf, shortHash } from '@/lib/utils';
 import { home } from '@/routes';
-import type { Commit, CursorPaginated, ThreadCommit } from '@/types';
+import type {
+    Commit,
+    CursorPaginated,
+    ThreadCommit,
+    ThreadContinuation,
+} from '@/types';
 
 const titleLength = 60;
 
 export default function Show({
     commit,
     ancestors,
-    series,
+    continuation,
     replies,
 }: {
     commit: Commit;
     ancestors: ThreadCommit[];
-    series: ThreadCommit[];
+    continuation: ThreadContinuation;
     replies: CursorPaginated<ThreadCommit> | null;
 }) {
     const { auth } = usePage().props;
+    const { shown, nextId, size, isCapped, isLoading, loadMore } =
+        useContinuation(continuation);
+    const focusedPosition = continuation.position;
+    const positionAt = (position: number) =>
+        size > 1 && position >= 1 ? { position, size, isCapped } : undefined;
+
     const excerpt =
         commit.body.length > titleLength
             ? `${commit.body.slice(0, titleLength).trimEnd()}…`
@@ -38,7 +50,6 @@ export default function Show({
     };
 
     const lastAncestor = ancestors.at(-1);
-    const isSeries = commit.series_id !== null;
 
     return (
         <>
@@ -67,7 +78,6 @@ export default function Show({
                 return isDeleted(ancestor) ? (
                     <CommitTombstone
                         key={ancestor.id}
-                        commit={ancestor}
                         previousLane={previousLane}
                     />
                 ) : (
@@ -76,8 +86,10 @@ export default function Show({
                         commit={ancestor}
                         previousLane={previousLane}
                         isGroupedWithPrevious={isSameAuthor(previous, ancestor)}
-                        canDelete={isSeries}
-                        isSeriesExpanded
+                        canDelete={false}
+                        threadPosition={positionAt(
+                            focusedPosition - (ancestors.length - index),
+                        )}
                     />
                 );
             })}
@@ -88,33 +100,51 @@ export default function Show({
                 previousLane={lastAncestor ? laneOf(lastAncestor) : undefined}
                 isGroupedWithPrevious={isSameAuthor(lastAncestor, commit)}
                 initialReplies={replies ?? undefined}
-                endsWithDot={series.length === 0}
+                exceptReplyId={shown[0]?.id}
+                endsWithDot={shown.length === 0}
+                threadPosition={positionAt(focusedPosition)}
                 isFocused
-                isSeriesExpanded
             />
 
-            {series.map((part, index) => {
-                const previous = series[index - 1] ?? commit;
-                const previousLane = laneOf(previous);
+            {shown.map((next, index) => {
+                const previous = shown[index - 1] ?? commit;
+                const following = shown[index + 1];
+                const isLast = following === undefined;
+                const exceptReplyId = following?.id ?? nextId ?? undefined;
 
-                return isDeleted(part) ? (
-                    <CommitTombstone
-                        key={part.id}
-                        commit={part}
-                        previousLane={previousLane}
-                        endsWithDot={index === series.length - 1}
-                    />
-                ) : (
+                return (
                     <CommitCard
-                        key={part.id}
-                        commit={part}
-                        previousLane={previousLane}
-                        endsWithDot={index === series.length - 1}
-                        isGroupedWithPrevious={isSameAuthor(previous, part)}
-                        isSeriesExpanded
+                        key={next.id}
+                        commit={next}
+                        previousLane={laneOf(previous)}
+                        isGroupedWithPrevious
+                        exceptReplyId={exceptReplyId}
+                        loadsReplies={isLast && nextId === null}
+                        endsWithDot={isLast && nextId === null}
+                        threadPosition={positionAt(focusedPosition + index + 1)}
                     />
                 );
             })}
+
+            {nextId !== null && (
+                <div className="pr-4 pl-16 sm:pl-18">
+                    <div className="border-b py-3">
+                        <button
+                            type="button"
+                            onClick={loadMore}
+                            aria-disabled={isLoading}
+                            className="-ml-2 min-w-44 rounded-md px-2 py-0.5 text-left text-[13px] text-muted-foreground transition-colors [overflow-anchor:none] hover:bg-accent hover:text-foreground aria-disabled:pointer-events-none"
+                            data-test="more-thread-button"
+                        >
+                            {isLoading ? (
+                                <span role="status">Loading the thread…</span>
+                            ) : (
+                                'Show more of this thread'
+                            )}
+                        </button>
+                    </div>
+                </div>
+            )}
         </>
     );
 }

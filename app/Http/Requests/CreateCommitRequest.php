@@ -9,7 +9,9 @@ use App\Dto\NewPoll;
 use App\Enums\PollDuration;
 use App\Models\Commit;
 use App\Models\User;
+use App\Rules\CommitBodyLength;
 use App\Rules\VisibleCommit;
+use App\Services\CommitBodies;
 use App\Services\Urls;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -22,27 +24,34 @@ use Illuminate\Validation\Rules\In;
 
 final class CreateCommitRequest extends FormRequest
 {
-    public const array BODY_RULES = ['required', 'string', 'min:3', 'max:280'];
-
-    public function authorize(): bool
+    /**
+     * Images make text optional. Bound the raw body before parsing links to limit storage and processing costs.
+     *
+     * @return list<string|ValidationRule>
+     */
+    public static function bodyRules(bool $hasImages = false): array
     {
-        return true;
+        return ['bail', $hasImages ? 'nullable' : 'required', 'string', 'min:'.Commit::MIN_BODY_LENGTH, 'max:'.CommitBodyLength::MAX_RAW_LENGTH, new CommitBodyLength];
+    }
+
+    /**
+     * Blank lines are collapsed before the body is measured, by every request that takes a commit body.
+     */
+    public static function normalizeBody(FormRequest $request): void
+    {
+        if (is_string($request->input('body'))) {
+            $request->merge(['body' => resolve(CommitBodies::class)->normalize($request->string('body')->value())]);
+        }
     }
 
     /**
      * Images are checked by their contents, not their extension, and SVG is never accepted since it can carry scripts.
      *
-     * @return array<string, array<int, string|ValidationRule|File|Dimensions|Enum|In>>
+     * @return array<string, array<int, string|ValidationRule|File|Dimensions|Enum>>
      */
-    public function rules(): array
+    public static function attachmentRules(): array
     {
-        $user = $this->user();
-        assert($user instanceof User);
-
         return [
-            'body' => self::BODY_RULES,
-            'quoted_commit_id' => ['nullable', 'uuid', 'prohibits:parent_id', new VisibleCommit($user, __('That commit is no longer available to quote.'))],
-            'link_preview_url' => ['nullable', 'string', Rule::in(resolve(Urls::class)->all($this->string('body')->value()))],
             'poll' => ['nullable', 'array:options,duration', 'prohibits:parent_id,images'],
             'poll.options' => ['required_with:poll', 'list', 'min:'.NewPoll::MinOptions, 'max:'.NewPoll::MaxOptions],
             'poll.options.*' => ['required', 'string', 'max:'.NewPoll::MaxOptionLength, 'distinct:ignore_case'],
@@ -51,13 +60,35 @@ final class CreateCommitRequest extends FormRequest
             'images.*' => [
                 'required',
                 'image',
-                File::types(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])->max(CreateCommitImages::MAX_UPLOAD_SIZE),
+                File::types(['image/jpeg', 'image/png', 'image/webp'])->max(CreateCommitImages::MAX_UPLOAD_SIZE),
                 Rule::dimensions()
                     ->maxWidth(CreateCommitImages::MAX_SOURCE_DIMENSION)
                     ->maxHeight(CreateCommitImages::MAX_SOURCE_DIMENSION),
             ],
             'image_descriptions' => ['nullable', 'list', 'max:'.CreateCommitImages::MAX_IMAGES],
             'image_descriptions.*' => ['nullable', 'string', 'max:'.CreateCommitImages::MAX_DESCRIPTION_LENGTH],
+        ];
+    }
+
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * @return array<string, array<int, string|ValidationRule|File|Dimensions|Enum|In>>
+     */
+    public function rules(): array
+    {
+        $user = $this->user();
+        assert($user instanceof User);
+        $body = $this->input('body');
+
+        return [
+            'body' => self::bodyRules($this->hasFile('images')),
+            'quoted_commit_id' => ['nullable', 'uuid', 'prohibits:parent_id', new VisibleCommit($user, 'That commit is no longer available to quote.')],
+            'link_preview_url' => ['nullable', 'string', Rule::in(is_string($body) ? resolve(Urls::class)->all($body) : [])],
+            ...self::attachmentRules(),
         ];
     }
 
@@ -89,7 +120,7 @@ final class CreateCommitRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'link_preview_url.in' => __('The link card must be one of the links in the body.'),
+            'link_preview_url.in' => 'The link card must be one of the links in the body.',
         ];
     }
 
@@ -134,5 +165,10 @@ final class CreateCommitRequest extends FormRequest
         return $this->filled('quoted_commit_id')
             ? Commit::query()->visibleTo($user)->find($this->string('quoted_commit_id')->value())
             : null;
+    }
+
+    public function prepareForValidation(): void
+    {
+        self::normalizeBody($this);
     }
 }

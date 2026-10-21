@@ -2,14 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Actions\CreateCommitTranslation;
+use App\Ai\Agents\CommitTranslator;
 use App\Enums\CommitStatus;
 use App\Enums\NotificationType;
+use App\Jobs\DetectCommitLanguage;
 use App\Jobs\ModerateCommit;
 use App\Models\Commit;
 use App\Models\LinkPreview;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Queue;
 
 beforeEach(function (): void {
     config(['app.admins' => ['admin']]);
@@ -37,21 +40,10 @@ it('renders pending commits oldest first', function (): void {
             ->has('commits.data.0.user'));
 });
 
-it('shows the ai decision on commits and their series parts', function (): void {
+it('shows the ai decision on commits', function (): void {
     $admin = User::factory()->create(['username' => 'admin']);
-    $seriesId = Str::uuid7()->toString();
 
-    $first = Commit::factory()->pending()->create([
-        'series_id' => $seriesId,
-        'series_position' => 1,
-        'series_size' => 2,
-        'ai_decision' => CommitStatus::Approved,
-        'ai_categories' => [],
-    ]);
-    Commit::factory()->pending()->for($first, 'parent')->create([
-        'series_id' => $seriesId,
-        'series_position' => 2,
-        'series_size' => 2,
+    Commit::factory()->pending()->create([
         'ai_decision' => CommitStatus::Rejected,
         'ai_categories' => ['harassment'],
     ]);
@@ -62,10 +54,40 @@ it('shows the ai decision on commits and their series parts', function (): void 
     $response->assertOk()
         ->assertInertia(fn ($page) => $page
             ->has('commits.data', 1)
-            ->where('commits.data.0.ai_decision', 'approved')
-            ->where('commits.data.0.ai_categories', [])
-            ->where('commits.data.0.series_parts.1.ai_decision', 'rejected')
-            ->where('commits.data.0.series_parts.1.ai_categories', ['harassment']));
+            ->where('commits.data.0.ai_decision', 'rejected')
+            ->where('commits.data.0.ai_categories', ['harassment']));
+});
+
+it('lets moderators detect and translate pending commits without approving them', function (): void {
+    config(['ai.providers.opencode.key' => 'test-key']);
+    Queue::fake([DetectCommitLanguage::class]);
+    CommitTranslator::fake([
+        ['source_language' => 'de', 'body' => ''],
+        ['source_language' => 'de', 'body' => 'Good morning'],
+    ])->preventStrayPrompts();
+    $admin = User::factory()->create(['username' => 'admin']);
+    $commit = Commit::factory()->pending()->create(['body' => 'Guten morgen']);
+
+    $this->actingAs($admin)->withHeader('Accept-Language', 'en')->get(route('moderation.show'))
+        ->assertOk()->assertInertia(fn ($page) => $page
+        ->where('commits.data.0.translation.available', true)
+        ->where('commits.data.0.translation.translated', null));
+    Queue::assertPushed(DetectCommitLanguage::class, fn (DetectCommitLanguage $job): bool => $job->commitId === $commit->id);
+    CommitTranslator::assertNeverPrompted();
+
+    new DetectCommitLanguage($commit->id)->handle(resolve(CreateCommitTranslation::class));
+
+    $this->postJson(route('commit-translation.store', $commit), ['language' => 'en'])
+        ->assertOk()->assertJsonPath('translation.source_name', 'German')
+        ->assertJsonPath('translation.translated.body_segments.0.text', 'Good morning');
+    $this->get(route('moderation.show'))->assertOk()->assertInertia(fn ($page) => $page
+        ->where('commits.data.0.body', 'Guten morgen')
+        ->where('commits.data.0.translation.translated.body_segments.0.text', 'Good morning'));
+
+    $this->actingAs($commit->user)->postJson(route('commit-translation.store', $commit), ['language' => 'en'])
+        ->assertNotFound();
+    expect($commit->refresh()->status)->toBe(CommitStatus::Pending);
+    CommitTranslator::assertPromptedTimes(2);
 });
 
 it('keeps ai suggestions private and notifies the quoted author only after moderator approval', function (): void {

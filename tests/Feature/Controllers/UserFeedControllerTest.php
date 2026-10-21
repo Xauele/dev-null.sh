@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Enums\CommitStatus;
 use App\Models\Commit;
 use App\Models\CommitImage;
 use App\Models\User;
@@ -72,18 +71,6 @@ it('serves the public top-level commits of a user as an atom feed', function ():
         ->and((string) $feed->entry[1]->updated)->toBe(now()->subDay()->toAtomString())
         ->and((string) $feed->entry[1]->content)->toBe('First commit')
         ->and((string) $feed->entry[1]->content['type'])->toBe('text');
-});
-
-it('includes only the first part of a public series', function (): void {
-    $parts = commitSeries();
-    commitSeries($parts[0]->user, status: CommitStatus::Pending);
-    commitSeries($parts[0]->user, status: CommitStatus::Rejected);
-
-    $feed = atomFeed($this->get(route('user-feed.show', $parts[0]->user))->assertOk());
-
-    expect($feed->entry)->toHaveCount(1)
-        ->and((string) $feed->entry[0]->id)->toBe("urn:uuid:{$parts[0]->id}")
-        ->and((string) $feed->entry[0]->content)->toBe($parts[0]->body);
 });
 
 it('attaches the images of commits as enclosures', function (): void {
@@ -186,8 +173,32 @@ it('escapes commits and profiles into valid xml', function (): void {
         ->and((string) $feed->entry[0]->content)->toBe("<script>alert('x')</script> & ]]> bell");
 });
 
+it('updates the feed timestamp when the profile changes', function (): void {
+    $user = User::factory()->create([
+        'username' => 'octocat',
+        'created_at' => now()->subWeek(),
+        'updated_at' => now()->subWeek(),
+    ]);
+    Commit::factory()->for($user)->create(['created_at' => now()->subDay()]);
+
+    $before = atomFeed($this->get('/@octocat/feed.atom'));
+
+    expect((string) $before->updated)->toBe(now()->subDay()->toAtomString());
+
+    $user->update(['bio' => 'Updated profile']);
+
+    $after = atomFeed($this->get('/@octocat/feed.atom'));
+
+    expect((string) $after->updated)->toBe(now()->toAtomString())
+        ->and((string) $after->subtitle)->toBe('Updated profile');
+});
+
 it('serves an empty feed for users without public commits', function (): void {
-    $user = User::factory()->create(['username' => 'octocat', 'created_at' => now()->subYear()]);
+    $user = User::factory()->create([
+        'username' => 'octocat',
+        'created_at' => now()->subYear(),
+        'updated_at' => now()->subYear(),
+    ]);
 
     Commit::factory()->for($user)->pending()->create();
 

@@ -1,12 +1,13 @@
-import { Head, router } from '@inertiajs/react';
-import { ArrowRight, Search, Sparkles, X } from 'lucide-react';
+import { Head, router, usePage } from '@inertiajs/react';
+import { ArrowRight, History, Search, Sparkles, X } from 'lucide-react';
 import type { FormEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import SearchController from '@/actions/App/Http/Controllers/SearchController';
 import { CommitCard } from '@/components/commit-card';
 import { CommitSkeleton, EmptyFeed } from '@/components/commit-feed';
+import { rememberSearch, useRecentSearches } from '@/hooks/use-recent-searches';
 import AppLayout from '@/layouts/app-layout';
-import { searchMockCommits, suggestedQueries } from '@/lib/mock-search';
+import { searchCommits, suggestedQueries } from '@/lib/commit-search';
 import { laneColor } from '@/lib/utils';
 import type { Commit } from '@/types';
 
@@ -15,15 +16,22 @@ const skeletonDelay = 300;
 type Results = { term: string; commits: Commit[] };
 
 export default function Index({ query }: { query: string }) {
+    const userId = usePage().props.auth.user?.id ?? null;
+    const recentSearches = useRecentSearches(userId);
     const [draft, setDraft] = useState(query);
     const inputRef = useRef<HTMLInputElement>(null);
-    const { results, isWaiting } = useMockSearch(query);
+    const { results, isWaiting } = useCommitSearch(query);
 
     const search = (term: string) => {
         router.get(
             SearchController.index({ query: term === '' ? {} : { q: term } }),
             {},
-            { preserveState: true, preserveScroll: true, replace: true },
+            {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+                onSuccess: () => rememberSearch(userId, term),
+            },
         );
     };
 
@@ -64,14 +72,14 @@ export default function Index({ query }: { query: string }) {
                         placeholder="Search commits by meaning"
                         aria-label="Search commits"
                         autoComplete="off"
-                        className="h-11 w-full rounded-full border bg-background pr-11 pl-10 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring md:text-[15px] [&::-webkit-search-cancel-button]:hidden"
+                        className="h-11 w-full rounded-lg border bg-background pr-11 pl-10 text-base outline-none placeholder:text-muted-foreground focus-visible:border-ring md:text-[15px] [&::-webkit-search-cancel-button]:hidden"
                         data-test="search-input"
                     />
                     <button
                         type="button"
                         onClick={clear}
                         aria-label="Clear search"
-                        className="absolute top-1/2 right-2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-[color,opacity] hover:text-foreground disabled:pointer-events-none disabled:opacity-0"
+                        className="absolute top-1/2 right-2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-[color,opacity] hover:text-foreground disabled:pointer-events-none disabled:opacity-0"
                         disabled={draft === ''}
                     >
                         <X className="size-4" />
@@ -79,14 +87,13 @@ export default function Index({ query }: { query: string }) {
                 </form>
             </header>
 
-            {query === '' ? (
-                <Suggestions onPick={pick} />
-            ) : (
-                <>
-                    <SearchResults results={results} isWaiting={isWaiting} />
-                    <Suggestions onPick={pick} exclude={query} />
-                </>
+            {query !== '' && (
+                <SearchResults results={results} isWaiting={isWaiting} />
             )}
+            {recentSearches.length > 0 && (
+                <Suggestions onPick={pick} recent={recentSearches} />
+            )}
+            <Suggestions onPick={pick} exclude={query} />
         </>
     );
 }
@@ -97,7 +104,7 @@ Index.layout = AppLayout;
  * Keeps showing the previous results while the next ones load, and only reaches for a skeleton when there is nothing
  * to show yet and the wait is long enough to notice.
  */
-function useMockSearch(query: string) {
+function useCommitSearch(query: string) {
     const [results, setResults] = useState<Results | null>(null);
     const [isWaiting, setIsWaiting] = useState(false);
 
@@ -106,21 +113,25 @@ function useMockSearch(query: string) {
             return;
         }
 
-        let isCurrent = true;
+        const controller = new AbortController();
         const timeout = setTimeout(() => setIsWaiting(true), skeletonDelay);
 
-        void searchMockCommits(query).then((commits) => {
-            if (!isCurrent) {
-                return;
-            }
-
-            setResults({ term: query, commits });
-            setIsWaiting(false);
-            clearTimeout(timeout);
-        });
+        searchCommits(query, undefined, controller.signal)
+            .then((commits) => setResults({ term: query, commits }))
+            .catch(() => {
+                if (!controller.signal.aborted) {
+                    setResults({ term: query, commits: [] });
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) {
+                    setIsWaiting(false);
+                    clearTimeout(timeout);
+                }
+            });
 
         return () => {
-            isCurrent = false;
+            controller.abort();
             clearTimeout(timeout);
         };
     }, [query]);
@@ -202,23 +213,31 @@ function ResultsSkeleton({ isVisible }: { isVisible: boolean }) {
 function Suggestions({
     onPick,
     exclude,
+    recent,
 }: {
     onPick: (term: string) => void;
     exclude?: string;
+    recent?: string[];
 }) {
-    const visible = suggestedQueries.filter((term) => term !== exclude);
+    const visible =
+        recent ?? suggestedQueries.filter((term) => term !== exclude);
+    const headingId = recent ? 'recent-searches' : 'search-suggestions';
 
     return (
-        <section
-            aria-labelledby="search-suggestions"
-            className="px-4 py-6 sm:px-6"
-        >
+        <section aria-labelledby={headingId} className="px-4 py-6 sm:px-6">
             <h2
-                id="search-suggestions"
+                id={headingId}
                 className="mb-3 flex items-center gap-2 font-semibold"
             >
-                <Sparkles aria-hidden className="size-4 text-primary" />
-                Try searching for…
+                {recent ? (
+                    <History
+                        aria-hidden
+                        className="size-4 text-muted-foreground"
+                    />
+                ) : (
+                    <Sparkles aria-hidden className="size-4 text-primary" />
+                )}
+                {recent ? 'Recent searches' : 'Try searching for…'}
             </h2>
             <ul className="space-y-2">
                 {visible.map((term) => (

@@ -6,24 +6,26 @@ import {
     usePage,
     useRemember,
 } from '@inertiajs/react';
-import { ArrowUpRight, Check, Copy } from 'lucide-react';
+import { ArrowUpRight, Check, Copy, RefreshCw } from 'lucide-react';
 import type { CSSProperties, ReactNode, RefObject } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import OnboardingController from '@/actions/App/Http/Controllers/OnboardingController';
 import UserLaneController from '@/actions/App/Http/Controllers/UserLaneController';
+import UserProfileController from '@/actions/App/Http/Controllers/UserProfileController';
 import AppLogo from '@/components/app-logo';
 import { GitHubProfile } from '@/components/github-profile';
 import InputError from '@/components/input-error';
 import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog';
 import { LaneOptions, LanePreview } from '@/components/lane-picker';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import { SuggestedUserRow } from '@/components/who-to-follow';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { useUser } from '@/hooks/use-user';
 import { useKeyLabels } from '@/lib/keyboard';
 import { cn, laneColor } from '@/lib/utils';
-import type { SuggestedUser } from '@/types';
+import type { Lane, SuggestedUser } from '@/types';
 
 const laneNames = ['orange', 'green', 'violet', 'teal', 'rose', 'ochre'];
 
@@ -194,7 +196,7 @@ function CommitScript({ url }: { url: string }) {
 
     return (
         <div className="mt-3 flex items-start gap-2 rounded-md border bg-background py-2 pr-2 pl-3">
-            <code className="min-w-0 flex-1 py-0.5 font-mono text-[13px] leading-5 [overflow-wrap:anywhere]">
+            <code className="min-w-0 flex-1 py-0.5 font-mono text-[13px] leading-5 wrap-anywhere">
                 {command}
             </code>
             <Button
@@ -216,7 +218,7 @@ export default function Show({
     suggestions,
     commitScriptUrl,
 }: {
-    preferredLane: number | null;
+    preferredLane: Lane | null;
     automaticLane: number;
     suggestions: SuggestedUser[];
     commitScriptUrl: string;
@@ -224,10 +226,14 @@ export default function Show({
     const { auth } = usePage().props;
     const { user: currentUser } = useUser();
     const [step, setStep] = useRemember(0, 'onboarding-step');
-    const [selectedLane, setSelectedLane] = useState<number | null>(
+    const [selectedLane, setSelectedLane] = useState<Lane | null>(
         preferredLane,
     );
     const [isShowingShortcuts, setIsShowingShortcuts] = useState(false);
+    const [hasEditedOnGitHub, setHasEditedOnGitHub] = useRemember(
+        false,
+        'onboarding-edited-on-github',
+    );
     const keys = useKeyLabels();
     const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -266,7 +272,12 @@ export default function Show({
         return () => window.removeEventListener('keydown', onKeyDown);
     }, []);
 
-    const laneName = selectedLane === null ? 'auto' : laneNames[selectedLane];
+    const laneName =
+        selectedLane === null
+            ? 'auto'
+            : typeof selectedLane === 'string'
+              ? selectedLane
+              : laneNames[selectedLane];
 
     const steps = [
         {
@@ -276,7 +287,7 @@ export default function Show({
                 <StepContent
                     headingRef={headingRef}
                     title="This is you, according to GitHub."
-                    description="/dev/null copies your GitHub profile every time you sign in, so there's nothing to fill in. To change any of it, change it on GitHub."
+                    description="/dev/null copies your GitHub profile every time you sign in, so there's nothing to fill in. To change any of it, change it on GitHub, then sync it here."
                     actions={
                         <>
                             <Button onClick={next}>Looks right</Button>
@@ -285,11 +296,39 @@ export default function Show({
                                     href="https://github.com/settings/profile"
                                     target="_blank"
                                     rel="noopener noreferrer"
+                                    onClick={() => setHasEditedOnGitHub(true)}
                                 >
                                     Edit on GitHub
                                     <ArrowUpRight />
                                 </a>
                             </Button>
+                            {hasEditedOnGitHub && (
+                                <Form
+                                    {...UserProfileController.update.form()}
+                                    options={{
+                                        preserveScroll: true,
+                                        preserveState: true,
+                                    }}
+                                    onSuccess={() => router.flushAll()}
+                                >
+                                    {({ processing }) => (
+                                        <Button
+                                            type="submit"
+                                            variant="outline"
+                                            disabled={processing}
+                                            aria-busy={processing}
+                                            data-test="sync-profile-button"
+                                        >
+                                            {processing ? (
+                                                <Spinner />
+                                            ) : (
+                                                <RefreshCw />
+                                            )}
+                                            Sync from GitHub
+                                        </Button>
+                                    )}
+                                </Form>
+                            )}
                         </>
                     }
                 >
@@ -341,7 +380,7 @@ export default function Show({
                                 />
                             </div>
                             <InputError
-                                message={errors.lane}
+                                message={errors.lane ?? errors.color}
                                 className="mt-2"
                             />
                         </StepContent>
@@ -405,16 +444,17 @@ export default function Show({
                     }
                 >
                     <dl className="divide-y rounded-lg border bg-card text-[15px]">
-                        <div className="px-4 py-4">
+                        <div className="p-4">
                             <dt className="font-semibold">Write a commit</dt>
                             <dd className="mt-1 text-pretty text-muted-foreground">
                                 The composer sits at the top of your log. Plain
-                                text, up to 280 characters. Press <Kbd>c</Kbd>{' '}
-                                to jump to it, then <Kbd>{keys.mod}</Kbd>{' '}
-                                <Kbd>↵</Kbd> to commit.
+                                text, up to 4,000 characters; feeds fold long
+                                ones after 280. Press <Kbd>c</Kbd> to jump to
+                                it, then <Kbd>{keys.mod}</Kbd> <Kbd>↵</Kbd> to
+                                commit.
                             </dd>
                         </div>
-                        <div className="px-4 py-4">
+                        <div className="p-4">
                             <dt className="font-semibold">Use the keyboard</dt>
                             <dd className="mt-1 text-pretty text-muted-foreground">
                                 <Kbd>j</Kbd> and <Kbd>k</Kbd> move between
@@ -436,7 +476,7 @@ export default function Show({
                                 </span>
                             </dd>
                         </div>
-                        <div className="px-4 py-4">
+                        <div className="p-4">
                             <dt className="font-semibold">
                                 Commit from the terminal
                             </dt>
