@@ -10,6 +10,7 @@ export type Embed = {
     src: string;
     aspect_ratio: string | null;
     height: number | null;
+    poster?: string | null;
 };
 
 export type LinkPreview = {
@@ -18,6 +19,7 @@ export type LinkPreview = {
     description: string | null;
     image_url: string | null;
     site_name: string | null;
+    is_pending: boolean;
     embed?: Embed | null;
 };
 
@@ -50,6 +52,17 @@ export type BodySegment =
     | { type: 'code'; code: string }
     | { type: 'block'; language: string | null; html: string };
 
+export type CommitTranslation = {
+    language: string;
+    source_language: string | null;
+    source_name: string | null;
+    available: boolean;
+    translated: {
+        body_segments: BodySegment[];
+        preview_segments: BodySegment[] | null;
+    } | null;
+};
+
 export type Commit = {
     id: string;
     user_id: string;
@@ -57,19 +70,23 @@ export type Commit = {
     hot_score: number;
     body: string;
     ssh_signed?: boolean;
+    mentions: Record<string, string> | null;
     body_segments: BodySegment[];
     preview_segments: BodySegment[] | null;
+    translation?: CommitTranslation | null;
     status: CommitStatus;
+    is_checking?: boolean;
     created_at: string;
     updated_at: string;
     deleted_at?: null;
     stars_count: number;
+    pasteis_count: number;
     starred: boolean;
     user: User;
     replies_count?: number;
     reply_preview?: CursorPaginated<ThreadCommit>;
-    is_saved?: boolean;
-    saved_order?: number | null;
+    continuation_id?: string | null;
+    starred_order?: string | null;
     is_pinned?: boolean;
     parent?: (Omit<Commit, 'parent'> & { user: User }) | DeletedCommit | null;
     link_preview?: LinkPreview | null;
@@ -87,12 +104,16 @@ export type QuotedCommit = Pick<
     | 'user_id'
     | 'body'
     | 'body_segments'
+    | 'preview_segments'
     | 'status'
+    | 'is_checking'
     | 'created_at'
     | 'deleted_at'
     | 'user'
     | 'replies_count'
     | 'poll'
+    | 'link_preview'
+    | 'images'
 >;
 
 export type DeletedCommit = {
@@ -103,6 +124,14 @@ export type DeletedCommit = {
 };
 
 export type ThreadCommit = Commit | DeletedCommit;
+
+export type ThreadContinuation = {
+    data: Commit[];
+    position: number;
+    length: number;
+    is_capped: boolean;
+    next_id: string | null;
+};
 
 export type CursorPaginated<T> = {
     data: T[];

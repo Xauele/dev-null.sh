@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Actions\BefriendTom;
+use App\Actions\CreateTomFriendship;
 use App\Actions\UpdateOrCreateUser;
 use App\Jobs\ImportGitHubFollowsJob;
 use App\Jobs\SyncGitHubSshKeysJob;
+use App\Services\GitHubAccountScreening;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,7 +25,7 @@ final readonly class SessionController
         return Socialite::driver('github')->redirect();
     }
 
-    public function store(Request $request, UpdateOrCreateUser $action, BefriendTom $befriendTom): RedirectResponse
+    public function store(Request $request, UpdateOrCreateUser $action, CreateTomFriendship $createTomFriendship, GitHubAccountScreening $screening): RedirectResponse
     {
         if ($request->has('error')) {
             return $this->failed();
@@ -38,10 +39,19 @@ final readonly class SessionController
 
         assert($githubUser instanceof GitHubUser);
 
+        $refusal = $screening->refusal($githubUser);
+
+        if ($refusal !== null) {
+            return $this->failed($refusal);
+        }
+
         $user = $action->handle($githubUser);
 
         if ($user->wasRecentlyCreated) {
-            $befriendTom->handle($user);
+            $createTomFriendship->handle($user);
+
+            // Counted by Fathom in the browser, for the conversion rate of the metrics...
+            Inertia::flash('signedUp', true);
         }
 
         dispatch(new SyncGitHubSshKeysJob($user));
@@ -68,11 +78,11 @@ final readonly class SessionController
         return to_route('home');
     }
 
-    private function failed(): RedirectResponse
+    private function failed(?string $message = null): RedirectResponse
     {
         Inertia::flash('toast', [
             'type' => 'error',
-            'message' => __('Unable to sign in with GitHub. Please try again.'),
+            'message' => $message ?? __('Unable to sign in with GitHub. Please try again.'),
         ]);
 
         return to_route('home');

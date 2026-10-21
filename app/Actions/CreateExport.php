@@ -5,16 +5,24 @@ declare(strict_types=1);
 namespace App\Actions;
 
 use App\Enums\NotificationType;
-use App\Models\Bookmark;
 use App\Models\CommitImage;
+use App\Models\Conversation;
+use App\Models\ConversationParticipant;
+use App\Models\Device;
+use App\Models\Message;
 use App\Models\Poll;
 use App\Models\PollOption;
 use App\Models\User;
+use App\Models\UserTimeout;
 use App\Queries\CommitBuilder;
+use App\Services\CommitTranslations;
+use Carbon\CarbonImmutable;
 use Generator;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\LazyCollection;
 use stdClass;
 
 final readonly class CreateExport
@@ -22,7 +30,7 @@ final readonly class CreateExport
     /**
      * Everything stored about the user, deleted commits included, but never secrets like the remember token or session ids.
      *
-     * @return array{schema_version: int, exported_at: string, profile: array<string, bool|int|string|null>, commits: Generator<int, array<string, mixed>>, commit_signatures: Generator<int, array{commit_id: string, payload: string, signature: string, public_key: string, fingerprint: string}>, polls: Generator<int, array{commit_id: string, duration_minutes: int, opened_at: string|null, options: list<string>, created_at: string}>, poll_votes: Generator<int, array{commit_id: string, option: string, created_at: string}>, stars: Generator<int, string>, bookmarks: Generator<int, string>, following: Generator<int, array{username: string}>, followers: Generator<int, array{username: string}>, muting: Generator<int, array{username: string}>, blocking: Generator<int, array{username: string}>, notifications: Generator<int, array<string, string|null>>, ssh_keys: array<mixed>, sessions: Collection<int, stdClass>}
+     * @return array{schema_version: int, exported_at: string, profile: array<string, bool|int|string|null>, commits: Generator<int, array<string, mixed>>, commit_signatures: Generator<int, array{commit_id: string, payload: string, signature: string, public_key: string, fingerprint: string, namespace: string}>, polls: Generator<int, array{commit_id: string, duration_minutes: int, opened_at: string|null, options: list<string>, created_at: string}>, poll_votes: Generator<int, array{commit_id: string, option: string, created_at: string}>, stars: Generator<int, string>, following: Generator<int, array{username: string}>, followers: Generator<int, array{username: string}>, muting: Generator<int, array{username: string}>, blocking: Generator<int, array{username: string}>, dismissed_suggestions: Generator<int, array{username: string}>, messages: Generator<int, array{to: string|null, body: string, created_at: string}>, notifications: Generator<int, array<string, int|string|null>>, ssh_keys: array<mixed>, devices: array<int, array{name: string, fingerprint: string, approved_at: string, last_used_at: string|null}>, timeouts: array<int, array{reason: string, ends_at: string, created_at: string}>, sessions: Collection<int, stdClass>}
      */
     public function handle(User $user): array
     {
@@ -41,7 +49,22 @@ final readonly class CreateExport
                 'company' => $user->company,
                 'has_sponsors_listing' => $user->has_sponsors_listing,
                 'preferred_lane' => $user->preferred_lane,
+                'timezone' => $user->timezone,
+                'translation_language' => $user->translation_language,
+                'lane_color' => $user->lane_color,
+                'pasteis_mode' => $user->pasteis_mode,
+                'pasteis_received' => $user->pasteis_received,
+                'pasteis_given_today' => $user->pasteis_given_today,
+                'pasteis_given_on' => $user->pasteis_given_on?->toDateString(),
+                'remotes_enabled' => $user->remotes_enabled,
+                'remotes_from' => $user->remotes_from->value,
+                'pull_receipts' => $user->pull_receipts,
                 'pinned_commit_id' => $user->pinned_commit_id,
+                'live_platform' => $user->live_platform?->value,
+                'live_url' => $user->live_url,
+                'live_ends_at' => $user->live_ends_at?->toIso8601String(),
+                'last_seen_at' => $user->last_seen_at?->toDateString(),
+                'commit_rules_accepted_at' => $user->commit_rules_accepted_at?->toIso8601String(),
                 'created_at' => $user->created_at->toIso8601String(),
                 'updated_at' => $user->updated_at->toIso8601String(),
             ],
@@ -50,13 +73,25 @@ final readonly class CreateExport
             'polls' => $this->polls($user),
             'poll_votes' => $this->pollVotes($user),
             'stars' => $this->stars($user),
-            'bookmarks' => $this->bookmarks($user),
             'following' => $this->usernames($user->following()),
             'followers' => $this->usernames($user->followers()),
             'muting' => $this->usernames($user->muting()),
             'blocking' => $this->usernames($user->blocking()),
+            'dismissed_suggestions' => $this->usernames($user->dismissedSuggestions()),
+            'messages' => $this->messages($user),
             'notifications' => $this->notifications($user),
             'ssh_keys' => $user->sshKeys()->pluck('fingerprint')->all(),
+            'devices' => $user->devices()->oldest('approved_at')->get()->map(fn (Device $device): array => [
+                'name' => $device->name,
+                'fingerprint' => $device->fingerprint,
+                'approved_at' => $device->approved_at->toIso8601String(),
+                'last_used_at' => $device->last_used_at?->toIso8601String(),
+            ])->all(),
+            'timeouts' => $user->timeouts()->oldest()->get()->map(fn (UserTimeout $timeout): array => [
+                'reason' => $timeout->reason->value,
+                'ends_at' => $timeout->ends_at->toIso8601String(),
+                'created_at' => $timeout->created_at->toIso8601String(),
+            ])->all(),
             'sessions' => $this->sessions($user),
         ];
     }
@@ -66,25 +101,39 @@ final readonly class CreateExport
      */
     private function commits(User $user): Generator
     {
-        foreach ($user->commits()->withTrashed()->with('images')->lazyById(500) as $commit) {
-            yield [
-                'id' => $commit->id,
-                'parent_id' => $commit->parent_id,
-                'quoted_commit_id' => $commit->quoted_commit_id,
-                'body' => $commit->body,
-                'status' => $commit->status->value,
-                'images' => $commit->images->map(fn (CommitImage $image): string => $image->url())->all(),
-                'created_at' => $commit->created_at->toIso8601String(),
-                'updated_at' => $commit->updated_at->toIso8601String(),
-                'deleted_at' => $commit->deleted_at?->toIso8601String(),
-            ];
+        $commits = $user->commits()
+            ->withTrashed()
+            ->select(['id', 'parent_id', 'quoted_commit_id', 'body', 'status', 'pasteis_count', 'created_at', 'updated_at', 'deleted_at'])
+            ->with('images:id,commit_id')
+            ->lazyById(500);
+
+        $translations = resolve(CommitTranslations::class);
+
+        foreach ($commits->chunk(500) as $batch) {
+            $cached = Cache::many($batch->map($translations->key(...))->all());
+
+            foreach ($batch as $commit) {
+                yield [
+                    'id' => $commit->id,
+                    'parent_id' => $commit->parent_id,
+                    'quoted_commit_id' => $commit->quoted_commit_id,
+                    'body' => $commit->body,
+                    'cached_translations' => $cached[$translations->key($commit)],
+                    'status' => $commit->status->value,
+                    'pasteis_count' => $commit->pasteis_count,
+                    'images' => $commit->images->map(fn (CommitImage $image): string => $image->url())->all(),
+                    'created_at' => $commit->created_at->toIso8601String(),
+                    'updated_at' => $commit->updated_at->toIso8601String(),
+                    'deleted_at' => $commit->deleted_at?->toIso8601String(),
+                ];
+            }
         }
     }
 
     /**
-     * Export the original signed bytes for the user's own CLI submissions.
+     * The original signed bytes, included in the author's export.
      *
-     * @return Generator<int, array{commit_id: string, payload: string, signature: string, public_key: string, fingerprint: string}>
+     * @return Generator<int, array{commit_id: string, payload: string, signature: string, public_key: string, fingerprint: string, namespace: string}>
      */
     private function commitSignatures(User $user): Generator
     {
@@ -98,6 +147,7 @@ final readonly class CreateExport
                 'commit_signatures.signature',
                 'commit_signatures.public_key',
                 'commit_signatures.fingerprint',
+                'commit_signatures.namespace',
             ]);
 
         foreach ($rows as $row) {
@@ -107,6 +157,7 @@ final readonly class CreateExport
                 'signature' => (string) $row->signature,
                 'public_key' => (string) $row->public_key,
                 'fingerprint' => (string) $row->fingerprint,
+                'namespace' => (string) $row->namespace,
             ];
         }
     }
@@ -153,18 +204,36 @@ final readonly class CreateExport
      */
     private function stars(User $user): Generator
     {
-        foreach ($user->starredCommits()->withTrashed()->select('commits.id')->lazyById(500, 'commits.id', 'id') as $commit) {
-            yield $commit->id;
+        /** @var LazyCollection<int, object{commit_id: string}> $stars */
+        $stars = $user->starredCommits()->newPivotQuery()->select('commit_id')->lazyById(500, 'commit_id');
+
+        foreach ($stars as $star) {
+            yield $star->commit_id;
         }
     }
 
     /**
-     * @return Generator<int, string>
+     * The messages the user sent. What others sent them is theirs to export.
+     *
+     * @return Generator<int, array{to: string|null, body: string, created_at: string}>
      */
-    private function bookmarks(User $user): Generator
+    private function messages(User $user): Generator
     {
-        foreach (Bookmark::query()->where('user_id', $user->id)->lazyById(500) as $bookmark) {
-            yield $bookmark->commit_id;
+        $recipients = Conversation::query()
+            ->whereIn('id', ConversationParticipant::query()->select('conversation_id')->where('user_id', $user->id))
+            ->with('participants.user')
+            ->get()
+            ->mapWithKeys(fn (Conversation $conversation): array => [$conversation->id => $conversation->isOrg()
+                ? 'org: '.($conversation->name ?? $conversation->id)
+                : $conversation->participants->firstWhere('user_id', '!=', $user->id)?->user->username,
+            ]);
+
+        foreach (Message::query()->where('user_id', $user->id)->whereNull('event')->lazyById(500) as $message) {
+            yield [
+                'to' => $recipients->get($message->conversation_id),
+                'body' => $message->body,
+                'created_at' => $message->created_at->toIso8601String(),
+            ];
         }
     }
 
@@ -174,28 +243,39 @@ final readonly class CreateExport
      */
     private function usernames(BelongsToMany $users): Generator
     {
-        foreach ($users->select(['users.id', 'users.username'])->lazyById(500, 'users.id', 'id') as $user) {
+        /** @var LazyCollection<int, object{username: string}> $users */
+        $users = $users->toBase()->select(['users.id', 'users.username'])->lazyById(500, 'users.id', 'id');
+
+        foreach ($users as $user) {
             yield ['username' => $user->username];
         }
     }
 
     /**
-     * Moderators stay anonymous, as they are on the notifications page.
+     * Moderators stay anonymous, as they are on the notifications page, and level-ups are the user's own doing.
      *
-     * @return Generator<int, array<string, string|null>>
+     * @return Generator<int, array<string, int|string|null>>
      */
     private function notifications(User $user): Generator
     {
-        foreach ($user->notifications()->with('actor')->lazyById(500) as $notification) {
-            $isModeration = in_array($notification->type, [NotificationType::Approved, NotificationType::Rejected], true);
+        /** @var LazyCollection<int, object{type: string, actor: string, commit_id: string|null, reason: string|null, level: int|string|null, read_at: string|null, created_at: string}> $notifications */
+        $notifications = $user->notifications()
+            ->join('users as actors', 'actors.id', '=', 'notifications.actor_id')
+            ->toBase()
+            ->select(['notifications.id', 'notifications.type', 'notifications.commit_id', 'notifications.reason', 'notifications.level', 'notifications.read_at', 'notifications.created_at', 'actors.username as actor'])
+            ->lazyById(500, 'notifications.id', 'id');
+
+        foreach ($notifications as $notification) {
+            $isModeration = in_array($notification->type, [NotificationType::Approved->value, NotificationType::Rejected->value, NotificationType::LeveledUp->value], true);
 
             yield [
-                'type' => $notification->type->value,
-                'actor' => $isModeration ? null : $notification->actor->username,
+                'type' => $notification->type,
+                'actor' => $isModeration ? null : $notification->actor,
                 'commit_id' => $notification->commit_id,
                 'reason' => $notification->reason,
-                'read_at' => $notification->read_at?->toIso8601String(),
-                'created_at' => $notification->created_at->toIso8601String(),
+                'level' => $notification->level === null ? null : (int) $notification->level,
+                'read_at' => $notification->read_at === null ? null : CarbonImmutable::parse($notification->read_at)->toIso8601String(),
+                'created_at' => CarbonImmutable::parse($notification->created_at)->toIso8601String(),
             ];
         }
     }

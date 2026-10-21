@@ -3,11 +3,16 @@ import { Star } from 'lucide-react';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { Ref } from 'react';
 import CommitStarController from '@/actions/App/Http/Controllers/CommitStarController';
+import { ActionTooltip } from '@/components/action-tooltip';
 import { CommitStarPollingContext } from '@/components/commit-star-polling';
+import { CommitStargazersDialog } from '@/components/commit-stargazers-dialog';
+import { StarredRemovalContext } from '@/components/starred-removal-context';
+import { useCommitNotFound } from '@/hooks/use-deleted-resources';
 import { refreshSharedState, useSharedState } from '@/hooks/use-shared-state';
 import { signIn } from '@/lib/auth';
 import { createCommitStarMutations } from '@/lib/commit-star-mutations';
 import { commitStateKey } from '@/lib/commit-state';
+import { formatCount } from '@/lib/numbers';
 import { toastWhenThrottled } from '@/lib/throttle';
 import { cn } from '@/lib/utils';
 import type { Commit } from '@/types';
@@ -32,6 +37,7 @@ export function CommitStarButton({
     className?: string;
 }) {
     const { auth } = usePage().props;
+    const commitNotFound = useCommitNotFound();
     const isOwn = commit.user_id === auth.user?.id;
     const [starred, setStarred] = useSharedState(
         commitStateKey('starred', commit.id),
@@ -48,6 +54,7 @@ export function CommitStarButton({
     const [isAnimating, setIsAnimating] = useState(false);
     const [localMutations] = useState(createCommitStarMutations);
     const polling = useContext(CommitStarPollingContext);
+    const onRemoved = useContext(StarredRemovalContext);
     const mutations = polling?.mutations ?? localMutations;
     const canPoll =
         (isOwn || commit.status === 'approved') && auth.user !== null;
@@ -84,7 +91,12 @@ export function CommitStarButton({
 
     if (isOwn) {
         return (
-            <StarCount ref={setElement} count={count} className={className} />
+            <StarCount
+                ref={setElement}
+                commit={commit}
+                count={count}
+                className={className}
+            />
         );
     }
 
@@ -124,7 +136,9 @@ export function CommitStarButton({
                     : CommitStarController.destroy(commit),
                 {
                     onHttpException: (response) => {
-                        toastWhenThrottled(response);
+                        if (!commitNotFound(commit.id, response)) {
+                            toastWhenThrottled(response);
+                        }
                     },
                 },
             );
@@ -132,6 +146,7 @@ export function CommitStarButton({
             setStarred(response.starred);
             setCount(response.stars_count);
             router.flushAll();
+            if (!response.starred) onRemoved?.(commit.id);
         } catch {
             setStarred(!next);
             setCount((current) => Math.max(0, current + (next ? -1 : 1)));
@@ -141,70 +156,87 @@ export function CommitStarButton({
     };
 
     return (
-        <button
-            ref={setElement}
-            aria-disabled={request.processing}
-            type="button"
-            onClick={toggle}
-            aria-pressed={starred}
-            aria-label={starLabel(starred, count)}
-            title={starred ? 'Unstar' : 'Star'}
-            className={cn(
-                'group/star inline-flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-                starred && 'text-primary hover:text-primary',
-                className,
-            )}
-            data-test="star-commit-button"
-        >
-            <Star
-                onAnimationEnd={() => setIsAnimating(false)}
+        <ActionTooltip label={starred ? 'Unstar' : 'Star'}>
+            <button
+                ref={setElement}
+                aria-disabled={request.processing}
+                type="button"
+                onClick={toggle}
+                aria-pressed={starred}
+                aria-label={starLabel(starred, count)}
                 className={cn(
-                    'size-4 transition-transform group-hover/star:scale-110 active:scale-95',
-                    starred && 'fill-current',
-                    isAnimating && 'motion-safe:animate-star-pop',
+                    'group/star inline-flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+                    starred && 'text-primary hover:text-primary',
+                    count === 0 && 'mr-[calc(0.25rem+1ch)]',
+                    className,
                 )}
-            />
-            <span data-test="star-count" className="min-w-[1ch] text-left">
-                {count > 0 ? count : ''}
-            </span>
-        </button>
+                data-test="star-commit-button"
+            >
+                <Star
+                    onAnimationEnd={() => setIsAnimating(false)}
+                    className={cn(
+                        'size-4 transition-transform group-hover/star:scale-110 active:scale-95',
+                        starred && 'fill-current',
+                        isAnimating && 'motion-safe:animate-star-pop',
+                    )}
+                />
+                {count > 0 && (
+                    <span
+                        data-test="star-count"
+                        className="min-w-[1ch] text-left tabular-nums"
+                    >
+                        {formatCount(count)}
+                    </span>
+                )}
+            </button>
+        </ActionTooltip>
     );
 }
 
 /**
- * Authors can't star their own commits, so they only see how many stars others gave.
+ * Authors can't star their own commits, so they see how many stars others gave, and who gave them.
+ *
+ * It stays one button whatever the count, as star polling keeps watching the element it was given.
  */
 function StarCount({
     ref,
+    commit,
     count,
     className,
 }: {
-    ref?: Ref<HTMLSpanElement>;
+    ref?: Ref<HTMLButtonElement>;
+    commit: Commit;
     count: number;
     className?: string;
 }) {
     const label =
         count === 0
             ? 'No stars yet'
-            : `${count} ${count === 1 ? 'star' : 'stars'}`;
+            : `${count} ${count === 1 ? 'star' : 'stars'}, show who starred`;
 
     return (
-        <span
-            ref={ref}
-            role="img"
-            aria-label={label}
-            title={label}
-            className={cn(
-                'inline-flex cursor-default items-center gap-1 rounded-md px-1.5 py-1 font-mono text-[13px] text-muted-foreground',
-                count === 0 && 'text-muted-foreground/50',
-                className,
-            )}
-            data-test="star-count-readonly"
-        >
-            <Star aria-hidden className="size-4" />
-            <span data-test="star-count" className="min-w-[1ch] text-left">
-                {count > 0 ? count : ''}
-            </span>
-        </span>
+        <ActionTooltip label={label}>
+            <CommitStargazersDialog commit={commit} count={count}>
+                <button
+                    ref={ref}
+                    type="button"
+                    disabled={count === 0}
+                    aria-label={label}
+                    className={cn(
+                        'inline-flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-default disabled:text-muted-foreground/50 disabled:hover:bg-transparent',
+                        className,
+                    )}
+                    data-test="own-star-count"
+                >
+                    <Star aria-hidden className="size-4" />
+                    <span
+                        data-test="star-count"
+                        className="min-w-[1ch] text-left"
+                    >
+                        {count > 0 ? formatCount(count) : ''}
+                    </span>
+                </button>
+            </CommitStargazersDialog>
+        </ActionTooltip>
     );
 }

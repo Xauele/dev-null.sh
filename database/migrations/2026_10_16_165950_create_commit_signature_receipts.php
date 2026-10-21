@@ -22,6 +22,7 @@ return new class extends Migration
             $table->text('signature');
             $table->text('public_key');
             $table->string('fingerprint', 100);
+            $table->string('namespace', 32);
             $table->timestamps();
         });
     }

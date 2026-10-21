@@ -56,7 +56,7 @@ final readonly class SshSignature
     }
 
     /**
-     * Return a standard OpenSSH-armored signature for independent verification.
+     * Re-encode this SSHSIG in portable OpenSSH armored format.
      */
     public function toArmored(): string
     {

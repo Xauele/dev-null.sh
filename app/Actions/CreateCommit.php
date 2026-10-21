@@ -6,12 +6,16 @@ namespace App\Actions;
 
 use App\Dto\NewPoll;
 use App\Enums\CommitStatus;
+use App\Jobs\CheckUserLevel;
 use App\Jobs\EmbedCommit;
 use App\Jobs\ModerateCommit;
+use App\Jobs\ReplyAsTom;
 use App\Jobs\UnfurlLink;
 use App\Models\Commit;
 use App\Models\LinkPreview;
 use App\Models\User;
+use App\Queries\MentionedUsersQuery;
+use App\Queries\TomQuery;
 use App\Services\EmojiShortcodes;
 use App\Services\TheAlgorithm;
 use App\Services\Urls;
@@ -30,6 +34,8 @@ final readonly class CreateCommit
         private TheAlgorithm $theAlgorithm,
         private EmojiShortcodes $emojiShortcodes,
         private Urls $urls,
+        private MentionedUsersQuery $mentionedUsers,
+        private TomQuery $tomQuery,
     ) {
         //
     }
@@ -39,7 +45,7 @@ final readonly class CreateCommit
      *
      * @param  list<UploadedFile>  $images
      * @param  array<int, string|null>  $imageDescriptions
-     * @param  array{payload: string, signature: string, public_key: string, fingerprint: string}|null  $signedProof
+     * @param  array{payload: string, signature: string, public_key: string, fingerprint: string, namespace: string}|null  $signedProof
      */
     public function handle(User $user, string $body, ?Commit $parent = null, ?Commit $quotedCommit = null, array $images = [], array $imageDescriptions = [], bool|string $linkPreview = true, ?NewPoll $poll = null, ?array $signedProof = null): Commit
     {
@@ -52,21 +58,22 @@ final readonly class CreateCommit
         return DB::transaction(function () use ($user, $body, $parent, $quotedCommit, $images, $imageDescriptions, $url, $poll, $signedProof): Commit {
             $linkPreview = $this->linkPreviewFor($url);
             $createdAt = now();
+            $hasGoodReputation = $user->hasGoodReputation();
 
             $commit = $user->commits()->create([
                 'body' => $this->emojiShortcodes->replace($body),
                 'signer_fingerprint' => $signedProof['fingerprint'] ?? null,
+                'mentions' => $this->mentionedUsers->get($body),
                 'parent_id' => $parent?->id,
                 'root_id' => $parent?->threadRootId(),
-                'status' => $user->isAdmin() ? CommitStatus::Approved : CommitStatus::Pending,
+                'status' => $user->isAdmin() || $hasGoodReputation ? CommitStatus::Approved : CommitStatus::Pending,
                 'link_preview_id' => $linkPreview?->id,
                 'quoted_commit_id' => $quotedCommit?->id,
                 'hot_score' => $this->theAlgorithm->score($createdAt, 0, 0),
                 'created_at' => $createdAt,
             ]);
 
-            // Preserve the original signed bytes; user-visible text can be normalized.
-            // Both records are inserted atomically with the commit.
+            // Retain only middleware-verified proof bytes, in the same transaction.
             if ($signedProof !== null) {
                 DB::table('commit_signatures')->insert([
                     'commit_id' => $commit->id,
@@ -74,6 +81,7 @@ final readonly class CreateCommit
                     'signature' => $signedProof['signature'],
                     'public_key' => $signedProof['public_key'],
                     'fingerprint' => $signedProof['fingerprint'],
+                    'namespace' => $signedProof['namespace'],
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
@@ -98,11 +106,27 @@ final readonly class CreateCommit
             }
 
             $this->createWorldReply->handle($commit);
-            if ($commit->status === CommitStatus::Pending && filled(config('services.openai.key'))) {
+
+            if ($commit->status === CommitStatus::Approved
+                && $user->github_id !== CreateTomFriendship::GITHUB_ID
+                && filled(config('ai.providers.opencode.key')) && filled(config('ai.providers.openai.key'))
+            ) {
+                $tom = $this->tomQuery->get();
+
+                if ($tom instanceof User && $commit->isAddressedTo($tom)) {
+                    dispatch(new ReplyAsTom($commit->id));
+                }
+            }
+
+            if ($commit->status === CommitStatus::Approved) {
+                dispatch(new CheckUserLevel($user))->afterCommit();
+            }
+
+            if ($commit->status === CommitStatus::Pending && ! $hasGoodReputation && filled(config('services.openai.key'))) {
                 dispatch(new ModerateCommit($commit))->afterCommit();
             }
 
-            if (filled(config('services.openai.key'))) {
+            if ($commit->body !== '' && filled(config('services.openai.key'))) {
                 dispatch(new EmbedCommit($commit))->afterCommit();
             }
 

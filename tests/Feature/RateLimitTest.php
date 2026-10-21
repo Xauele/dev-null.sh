@@ -14,14 +14,6 @@ dataset('rate limits', [
         60,
         60,
     ],
-    'bookmarks' => [
-        fn (): array => [
-            ['PUT', route('bookmark.store', $commit = Commit::factory()->create())],
-            ['DELETE', route('bookmark.destroy', $commit)],
-        ],
-        60,
-        60,
-    ],
     'pins' => [
         fn (): array => [
             ['PUT', route('commit-pin.update', $commit = Commit::factory()->create())],
@@ -43,8 +35,16 @@ dataset('rate limits', [
             ['GET', route('user-search.index', ['q' => 'nuno'])],
             ['GET', route('mention-suggestion.index', ['q' => 'nuno'])],
             ['GET', route('user-preview.show', User::factory()->create())],
+            ['GET', route('mention.preview', User::factory()->create())],
         ],
         120,
+        60,
+    ],
+    'issue suggestions' => [
+        fn (): array => [
+            ['GET', route('issue-suggestion.index', ['q' => '722'])],
+        ],
+        30,
         60,
     ],
     'exports' => [
@@ -103,7 +103,8 @@ it('shares a people lookup limit per guest IP without limiting other visitors', 
     $user = User::factory()->create(['username' => 'octocat']);
     $search = route('user-search.index', ['q' => 'octo']);
     $preview = route('user-preview.show', $user);
-    $requests = [$search, $preview];
+    $mentionPreview = route('mention.preview', $user);
+    $requests = [$search, $preview, $mentionPreview];
 
     $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.1']);
 
@@ -113,17 +114,20 @@ it('shares a people lookup limit per guest IP without limiting other visitors', 
 
     $this->getJson($search)->assertTooManyRequests();
     $this->getJson($preview)->assertTooManyRequests();
+    $this->getJson($mentionPreview)->assertTooManyRequests();
 
     $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.2']);
 
     $this->getJson($search)->assertOk();
     $this->getJson($preview)->assertOk();
+    $this->getJson($mentionPreview)->assertOk();
 
     $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.1']);
     $this->actingAs($user);
 
     $this->getJson($search)->assertOk();
     $this->getJson($preview)->assertOk();
+    $this->getJson($mentionPreview)->assertOk();
 });
 
 it('shares the JSON star budget across commits and replies without consuming other action budgets', function (): void {
@@ -156,7 +160,6 @@ it('shares the JSON star budget across commits and replies without consuming oth
 
     expect($user->starredCommits()->count())->toBe(0);
 
-    $this->putJson(route('bookmark.store', $commit))->assertOk();
     $this->put(route('commit-pin.update', $ownCommit))->assertRedirect();
     $this->post(route('user-follow.store', $commit->user))->assertRedirect();
     $this->getJson(route('user-search.index', ['q' => $commit->user->username]))->assertOk();

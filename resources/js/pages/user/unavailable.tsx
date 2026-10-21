@@ -2,6 +2,7 @@ import { Head, Link } from '@inertiajs/react';
 import { Ban } from 'lucide-react';
 import UserBlockController from '@/actions/App/Http/Controllers/UserBlockController';
 import { EmptyFeed } from '@/components/commit-feed';
+import { clearMentionSuggestionsCache } from '@/components/mention-textarea';
 import { Button } from '@/components/ui/button';
 import { UserAvatar } from '@/components/user-avatar';
 import AppLayout from '@/layouts/app-layout';
@@ -29,12 +30,13 @@ export default function Unavailable({
                         <UserAvatar
                             user={blockedUser}
                             className="mx-auto mb-5 size-16 text-xl grayscale"
+                            pixels={160}
                         />
                         <EmptyFeed command={`fatal: @${username} is blocked`}>
                             <p>
                                 You blocked {blockedUser.name}. Neither of you
-                                can follow, reply to, or star the other, or see
-                                each other's commits.
+                                can message, follow, reply to, or star the
+                                other, or see each other's commits.
                             </p>
                             <div className="mt-5 flex flex-wrap justify-center gap-2">
                                 <Button variant="outline" asChild>
@@ -43,6 +45,7 @@ export default function Unavailable({
                                             blockedUser,
                                         )}
                                         as="button"
+                                        onSuccess={clearMentionSuggestionsCache}
                                         data-test="unblock-button"
                                     >
                                         <Ban />

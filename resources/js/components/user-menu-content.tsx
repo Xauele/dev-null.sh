@@ -1,7 +1,20 @@
 import { Link, router, usePage } from '@inertiajs/react';
-import { Activity, Bookmark, LogOut, Settings, UserRound } from 'lucide-react';
-import BookmarkController from '@/actions/App/Http/Controllers/BookmarkController';
+import {
+    Activity,
+    BookOpen,
+    Star,
+    FileText,
+    LogOut,
+    Settings,
+    Shield,
+    UserRound,
+} from 'lucide-react';
+import AboutController from '@/actions/App/Http/Controllers/AboutController';
 import OperationsController from '@/actions/App/Http/Controllers/OperationsController';
+import PrivacyController from '@/actions/App/Http/Controllers/PrivacyController';
+import StarredCommitController from '@/actions/App/Http/Controllers/StarredCommitController';
+import TermsController from '@/actions/App/Http/Controllers/TermsController';
+import { GitHubIcon } from '@/components/github-icon';
 import {
     DropdownMenuGroup,
     DropdownMenuItem,
@@ -10,6 +23,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { UserInfo } from '@/components/user-info';
 import { useMobileNavigation } from '@/hooks/use-mobile-navigation';
+import { clearRecentSearches } from '@/hooks/use-recent-searches';
 import { clearStashes } from '@/hooks/use-stash';
 import { logout } from '@/routes';
 import { show } from '@/routes/user';
@@ -21,12 +35,13 @@ type Props = {
 };
 
 export function UserMenuContent({ user }: Props) {
-    const { auth } = usePage().props;
+    const { auth, repository } = usePage().props;
     const cleanup = useMobileNavigation();
 
     const handleLogout = () => {
         cleanup();
         clearStashes(user.id);
+        clearRecentSearches(user.id);
         router.flushAll();
     };
 
@@ -42,11 +57,11 @@ export function UserMenuContent({ user }: Props) {
                 <DropdownMenuItem asChild>
                     <Link
                         className="block w-full cursor-pointer"
-                        href={BookmarkController.index()}
+                        href={StarredCommitController.index()}
                         onClick={cleanup}
                     >
-                        <Bookmark className="mr-2" />
-                        Saved
+                        <Star className="mr-2" />
+                        Starred
                     </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
@@ -83,6 +98,52 @@ export function UserMenuContent({ user }: Props) {
                         </Link>
                     </DropdownMenuItem>
                 )}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+                <DropdownMenuItem asChild>
+                    <Link
+                        className="block w-full cursor-pointer"
+                        href={AboutController.show()}
+                        onClick={cleanup}
+                    >
+                        <BookOpen className="mr-2" />
+                        About
+                    </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                    <Link
+                        className="block w-full cursor-pointer"
+                        href={TermsController.show()}
+                        onClick={cleanup}
+                    >
+                        <FileText className="mr-2" />
+                        Terms
+                    </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                    <Link
+                        className="block w-full cursor-pointer"
+                        href={PrivacyController.show()}
+                        onClick={cleanup}
+                    >
+                        <Shield className="mr-2" />
+                        Privacy
+                    </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                    <a
+                        href={`https://github.com/${repository}`}
+                        className="cursor-pointer"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={cleanup}
+                        data-test="source-code-link"
+                    >
+                        <GitHubIcon className="mr-2" />
+                        GitHub
+                    </a>
+                </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>

@@ -10,6 +10,7 @@ import { ModerationTabs } from '@/components/moderation-tabs';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { useCommitNotFound } from '@/hooks/use-deleted-resources';
 import { focusCommit } from '@/hooks/use-keyboard-shortcuts';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
@@ -174,6 +175,7 @@ export default function Show({
     commits: CursorPaginated<Commit>;
 }) {
     const [isModerating, setIsModerating] = useState(false);
+    const commitNotFound = useCommitNotFound();
 
     const moderate = (
         commit: Commit,
@@ -192,6 +194,7 @@ export default function Show({
                     ? { reason: reason ?? '' }
                     : {},
             preserveScroll: true,
+            only: ['commits', 'hasUnmoderatedCommits'],
             reset: ['commits'],
             onSuccess: () =>
                 requestAnimationFrame(() => {
@@ -206,6 +209,7 @@ export default function Show({
                     }
                 }),
             onFinish: () => setIsModerating(false),
+            onHttpException: (response) => !commitNotFound(commit.id, response),
             onError: (errors) =>
                 onError?.(
                     errors.reason ??
@@ -245,6 +249,7 @@ export default function Show({
         router.visit(ModerationController.update(), {
             data: { commits: selectedIds },
             preserveScroll: true,
+            only: ['commits', 'hasUnmoderatedCommits'],
             reset: ['commits'],
             onStart: () => setApproving(true),
             onSuccess: () => setSelected(new Set()),
@@ -314,7 +319,6 @@ export default function Show({
 
             <CommitFeed
                 commits={commits}
-                firstLane="var(--rail)"
                 end="That's every pending commit."
                 isFolded={false}
                 actions={(commit) => (

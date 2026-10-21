@@ -6,7 +6,8 @@ signature over this **exact binary payload**:
     unix_timestamp + "\n" + nonce + "\n" + reply_reference + "\n" + submitted_body
 
 For public, approved CLI commits, the app now preserves that signature as a
-portable receipt. This is not a new login method and does not require new keys.
+portable receipt. A CLI post with images additionally signs the ordered
+SHA-256 hashes of its images under the `devnull-commit-images` namespace. This is not a new login method and does not require new keys.
 
 ## Verify a receipt independently
 
@@ -32,7 +33,7 @@ again once the JSON receipt has been saved:
 jq -r .payload_base64 receipt.json | openssl base64 -d -A > submitted.txt
 jq -r .ssh_signature receipt.json > proof.sig
 printf 'devnull %s\n' "$(jq -r .public_key receipt.json)" > allowed_signers
-ssh-keygen -Y verify -n devnull-commit -I devnull -f allowed_signers \
+ssh-keygen -Y verify -n "$(jq -r .namespace receipt.json)" -I devnull -f allowed_signers \
     -s proof.sig < submitted.txt
 ```
 
@@ -48,6 +49,8 @@ API key, or network access is needed to verify a saved receipt.
   user's GitHub account before accepting a CLI post. **That historic
   GitHub-to-key binding is a claim by the app**, not independently proven
   by the standalone SSH signature.
+- For image commits, the signed payload includes ordered SHA-256 hashes, **not the image bytes**. To verify actual image integrity, independently hash those images and compare the digests.
+- Proof namespaces are `devnull-commit` and `devnull-commit-images`.
 - The `payload_base64` field preserves **exact signed bytes**.
   `displayed_body` is the text after the app's normal body normalization
   and emoji processing, and may not match byte-for-byte.

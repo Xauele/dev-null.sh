@@ -30,7 +30,8 @@ else
         --output "$temp_dir/receipt.json"
 fi
 
-if [[ "$(jq -er '.namespace' "$temp_dir/receipt.json")" != 'devnull-commit' ]]; then
+namespace="$(jq -er '.namespace' "$temp_dir/receipt.json")"
+if [[ "$namespace" != 'devnull-commit' && "$namespace" != 'devnull-commit-images' ]]; then
     printf 'Unexpected SSH signature namespace\n' >&2
     exit 1
 fi
@@ -43,7 +44,7 @@ key="$(jq -er '.public_key' "$temp_dir/receipt.json")"
 printf 'devnull %s\n' "$key" > "$temp_dir/allowed_signers"
 
 ssh-keygen -Y verify \
-    -n devnull-commit \
+    -n "$namespace" \
     -I devnull \
     -f "$temp_dir/allowed_signers" \
     -s "$temp_dir/signature" < "$temp_dir/payload.bin"

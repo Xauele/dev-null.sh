@@ -3,12 +3,15 @@ import { Quote } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import { useRef, useState } from 'react';
 import CommitController from '@/actions/App/Http/Controllers/CommitController';
+import { ActionTooltip } from '@/components/action-tooltip';
 import { BodyCounter } from '@/components/body-counter';
 import {
+    ImageDropOverlay,
     ImagePickerButton,
     ImagePickerPreviews,
     imageErrorFrom,
 } from '@/components/commit-image-picker';
+import { CommitRulesDialog, useCommitRules } from '@/components/commit-rules';
 import InputError from '@/components/input-error';
 import { MentionTextarea } from '@/components/mention-textarea';
 import { QuotedCommit } from '@/components/quoted-commit';
@@ -22,14 +25,20 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { UserAvatar } from '@/components/user-avatar';
+import { useMarkCommitDeleted } from '@/hooks/use-deleted-resources';
 import { useImageAttachments } from '@/hooks/use-image-attachments';
 import { useSecretWarning } from '@/hooks/use-secret-warning';
 import { moveCaretToEnd, useHasStash, useStash } from '@/hooks/use-stash';
 import { useUser } from '@/hooks/use-user';
 import { signIn } from '@/lib/auth';
-import { maxBodyLength, minBodyLength } from '@/lib/commit';
+import {
+    bodyCharacterCount,
+    maxBodyLength,
+    maxRawBodyLength,
+    minBodyLength,
+} from '@/lib/commit';
 import { hasModKey, useKeyLabels } from '@/lib/keyboard';
-import { characterCount, cn } from '@/lib/utils';
+import { characterCount, cn, isRejectedSubmission } from '@/lib/utils';
 import type { Commit } from '@/types';
 
 export function CommitQuoteButton({
@@ -51,37 +60,38 @@ export function CommitQuoteButton({
 
     return (
         <>
-            <button
-                type="button"
-                onClick={() => {
-                    if (auth.user === null) {
-                        signIn();
+            <ActionTooltip label="Quote" shortcut={keyShortcut}>
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (auth.user === null) {
+                            signIn();
 
-                        return;
-                    }
+                            return;
+                        }
 
-                    setIsOpen(true);
-                }}
-                aria-haspopup="dialog"
-                aria-keyshortcuts={keyShortcut}
-                title={keyShortcut ? `Quote (${keyShortcut})` : 'Quote'}
-                className={cn(
-                    'flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
-                    className,
-                )}
-                data-test="quote-button"
-            >
-                <Quote className="size-4" />
-                <span className="sr-only sm:not-sr-only">Quote</span>
-                {hasStash && (
-                    <span
-                        title="You have an unsent quote here"
-                        className="font-mono text-[11px] opacity-70"
-                    >
-                        {'stash@{0}'}
-                    </span>
-                )}
-            </button>
+                        setIsOpen(true);
+                    }}
+                    aria-haspopup="dialog"
+                    aria-keyshortcuts={keyShortcut}
+                    className={cn(
+                        'flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+                        className,
+                    )}
+                    data-test="quote-button"
+                >
+                    <Quote className="size-4" />
+                    <span className="sr-only sm:not-sr-only">Quote</span>
+                    {hasStash && (
+                        <span
+                            title="You have an unsent quote here"
+                            className="font-mono text-[11px] opacity-70"
+                        >
+                            {'stash@{0}'}
+                        </span>
+                    )}
+                </button>
+            </ActionTooltip>
 
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
                 {isOpen && (
@@ -103,25 +113,40 @@ function QuoteComposer({
     onClose: () => void;
 }) {
     const { user } = useUser();
+    const markCommitDeleted = useMarkCommitDeleted();
     const id = `quote-${commit.id}`;
     const {
         body,
         images,
         descriptions,
         isRestored,
+        key: stashKey,
         updateBody,
         updateImages,
         drop,
     } = useStash(user.id, id);
-    const attachments = useImageAttachments(images, descriptions, updateImages);
+    const attachments = useImageAttachments(
+        images,
+        descriptions,
+        updateImages,
+        stashKey,
+    );
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const secrets = useSecretWarning(body);
+    const commitRules = useCommitRules();
     const keys = useKeyLabels();
 
-    const isQuotable = characterCount(body.trim()) >= minBodyLength;
+    const isQuotable =
+        (images.length > 0 || characterCount(body.trim()) >= minBodyLength) &&
+        bodyCharacterCount(body) <= maxBodyLength;
 
     const submitOnModEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-        if (event.key === 'Enter' && hasModKey(event) && isQuotable) {
+        if (
+            event.key === 'Enter' &&
+            hasModKey(event) &&
+            isQuotable &&
+            !attachments.isReading()
+        ) {
             event.preventDefault();
             event.currentTarget.form?.requestSubmit();
         }
@@ -142,9 +167,13 @@ function QuoteComposer({
                     event.preventDefault();
                 }
             }}
+            {...attachments.dropzone}
             className="gap-3 p-4 sm:max-w-xl sm:p-5"
             data-test="quote-composer"
         >
+            {attachments.isDraggingFiles && (
+                <ImageDropOverlay className="fixed" />
+            )}
             <DialogTitle className="text-base">
                 Quote @{commit.user.username}
             </DialogTitle>
@@ -155,19 +184,28 @@ function QuoteComposer({
             <Form
                 {...CommitController.store.form()}
                 errorBag="quote"
-                onBefore={secrets.beforeSubmit}
-                transform={(data) =>
-                    images.length > 0
-                        ? {
-                              ...data,
-                              images,
-                              image_descriptions: descriptions,
-                          }
-                        : data
+                onBefore={() =>
+                    !attachments.isReading() &&
+                    commitRules.beforeSubmit() &&
+                    secrets.beforeSubmit()
                 }
+                transform={(data) => ({
+                    ...data,
+                    commit_rules_accepted: commitRules.hasAccepted(),
+                    ...(images.length > 0 && {
+                        images,
+                        image_descriptions: descriptions,
+                    }),
+                })}
                 options={{ preserveScroll: true }}
+                onError={(errors) => {
+                    if (errors.quoted_commit_id) {
+                        markCommitDeleted(commit.id);
+                        onClose();
+                    }
+                }}
                 onSuccess={(page) => {
-                    if (page.flash.committed) {
+                    if (!isRejectedSubmission(page.flash)) {
                         attachments.clear();
                         drop();
                         onClose();
@@ -194,6 +232,7 @@ function QuoteComposer({
                             <MentionTextarea
                                 ref={textareaRef}
                                 id={id}
+                                quote={commit.id}
                                 name="body"
                                 rows={1}
                                 autoFocus
@@ -201,12 +240,10 @@ function QuoteComposer({
                                 onValueChange={updateBody}
                                 onKeyDown={submitOnModEnter}
                                 onPaste={attachments.onPaste}
-                                onDragOver={attachments.onDragOver}
-                                onDrop={attachments.onDrop}
                                 onFocus={
                                     isRestored ? moveCaretToEnd : undefined
                                 }
-                                maxLength={maxBodyLength}
+                                maxLength={maxRawBodyLength}
                                 placeholder="Add your take"
                                 autoComplete="off"
                                 aria-invalid={
@@ -222,6 +259,10 @@ function QuoteComposer({
                                 message={errors.body ?? errors.quoted_commit_id}
                             />
 
+                            <CommitRulesDialog
+                                rules={commitRules}
+                                textarea={textareaRef}
+                            />
                             <SecretWarning
                                 body={body}
                                 findings={secrets.findings}
@@ -247,12 +288,13 @@ function QuoteComposer({
 
                             <QuotedCommit commit={commit} isPreview />
 
-                            <div className="sticky bottom-0 -mb-4 flex items-center justify-end gap-3 bg-background pt-3 pb-4 sm:-mb-5 sm:pb-5">
+                            <div className="sticky -bottom-4 -mb-4 flex items-center justify-end gap-3 bg-background pt-3 pb-4 sm:-bottom-5 sm:-mb-5 sm:pb-5">
                                 <div className="mr-auto flex items-center gap-2">
                                     <ImagePickerButton
                                         count={images.length}
                                         disabled={processing}
-                                        onPick={attachments.attach}
+                                        reading={attachments.reading}
+                                        onPick={attachments.pick}
                                         className="size-8"
                                     />
                                     {isRestored && (
@@ -282,7 +324,11 @@ function QuoteComposer({
                                 </Button>
                                 <Button
                                     type="submit"
-                                    disabled={processing || !isQuotable}
+                                    disabled={
+                                        processing ||
+                                        attachments.reading ||
+                                        !isQuotable
+                                    }
                                     title={`Quote (${keys.combo(keys.mod, keys.enter)})`}
                                     data-test="submit-quote-button"
                                 >

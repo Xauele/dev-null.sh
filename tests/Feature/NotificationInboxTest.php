@@ -30,6 +30,37 @@ it('polls only the unread count outside the inbox without acknowledging activity
     expect($notice->refresh()->read_at)->toBeNull();
 });
 
+it('filters the menu count using the current users saved notification types', function (string $type, int $expected): void {
+    $user = User::factory()->create();
+    $thread = Commit::factory()->for($user)->create();
+    $reply = Notification::factory()->for($user, 'recipient')->replied($thread)->create();
+    Notification::factory()->for($user, 'recipient')->for($reply->commit, 'commit')->mentioned()->read()->create();
+    Notification::factory()->for($user, 'recipient')->replied($thread)->create();
+    Notification::factory()->for($user, 'recipient')->create();
+    Notification::factory()->for($user, 'recipient')->starred()->create();
+
+    $this->actingAs($user)->withCookie('notification_types_'.$user->id, $type)
+        ->withCookie('notification_types_'.User::factory()->create()->id, 'none')
+        ->withHeaders([
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => (string) new HandleInertiaRequests()->version(request()),
+            'X-Inertia-Partial-Component' => 'log/show',
+            'X-Inertia-Partial-Data' => 'auth.unreadNotificationsCount',
+        ])->get(route('log.show', ['log' => 'trending', 'type' => 'none']))->assertOk()
+        ->assertJsonPath('props.auth.unreadNotificationsCount', $expected);
+
+    expect($reply->refresh()->read_at)->toBeNull();
+})->with([
+    'all types' => ['all', 4],
+    'replies' => ['replies', 2],
+    'multiple types' => ['replies,stars', 3],
+    'only read matches in an unread group' => ['mentions', 0],
+    'no matching type' => ['quotes', 0],
+    'no selected types' => ['none', 0],
+    'invalid saved filter' => ['invalid', 4],
+    'partially invalid saved filter' => ['replies,invalid', 4],
+]);
+
 it('refreshes the entire loaded inbox window without losing older pages', function (): void {
     $user = User::factory()->create();
     $notices = collect();
@@ -92,10 +123,11 @@ it('polls fresh filtered groups and excludes activity that is no longer relevant
         'X-Inertia-Partial-Data' => 'notifications,auth.unreadNotificationsCount',
         'X-Inertia-Reset' => 'notifications',
     ])->get(route('notification.index', ['type' => 'replies', 'through' => $old->created_at->toJSON()]))
-        ->assertOk()->assertJsonCount(1, 'props.notifications.data')
+        ->assertOk()->assertJsonCount(2, 'props.notifications.data')
         ->assertJsonPath('props.notifications.data.0.id', $latest->id)
-        ->assertJsonPath('props.notifications.data.0.group_id', $old->id)
-        ->assertJsonPath('props.notifications.data.0.event_count', 2)
+        ->assertJsonPath('props.notifications.data.0.group_id', $latest->id)
+        ->assertJsonPath('props.notifications.data.0.event_count', 1)
+        ->assertJsonPath('props.notifications.data.1.id', $old->id)
         ->assertJsonPath('props.auth.unreadNotificationsCount', 0);
 
     expect($latest->refresh()->read_at)->not->toBeNull()
@@ -103,7 +135,7 @@ it('polls fresh filtered groups and excludes activity that is no longer relevant
         ->and($other->refresh()->read_at)->toBeNull();
 });
 
-it('groups nested replies and mentions and bumps an old conversation using its latest event', function (): void {
+it('keeps nested replies separate from mentions in the same conversation', function (): void {
     $user = User::factory()->create();
     $root = Commit::factory()->for($user)->create(['created_at' => now()->subMonth()]);
     $first = Commit::factory()->for($root, 'parent')->create();
@@ -117,16 +149,17 @@ it('groups nested replies and mentions and bumps an old conversation using its l
     ]);
 
     $this->actingAs($user)->get(route('notification.index'))->assertOk()->assertInertia(fn ($page) => $page
-        ->has('notifications.data', 2)
+        ->has('notifications.data', 3)
         ->where('notifications.data.0.id', $latest->id)
-        ->where('notifications.data.0.group_id', $old->id)
-        ->where('notifications.data.0.event_count', 2)
+        ->where('notifications.data.0.group_id', $latest->id)
+        ->where('notifications.data.0.event_count', 1)
         ->where('notifications.data.0.created_at', $latest->created_at->toJSON())
-        ->where('notifications.data.1.id', $other->id));
+        ->where('notifications.data.1.id', $other->id)
+        ->where('notifications.data.2.id', $old->id));
 
     $this->getJson(route('notification-group.show', $latest))->assertOk()
-        ->assertJsonCount(2, 'data')->assertJsonPath('data.0.id', $latest->id)
-        ->assertJsonPath('data.1.id', $old->id)->assertJsonMissingPath('data.0.commit.parent');
+        ->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $latest->id)
+        ->assertJsonMissingPath('data.0.commit.parent');
 });
 
 it('orders tied timestamps by the latest notification id', function (): void {
@@ -140,6 +173,7 @@ it('orders tied timestamps by the latest notification id', function (): void {
 });
 
 it('groups follows across people within a rolling hour and bumps the group', function (): void {
+    $this->travelTo(today()->setTime(12, 0));
     $user = User::factory()->create();
     $first = Notification::factory()->for($user, 'recipient')->create(['created_at' => now()->subMinutes(100)]);
     Notification::factory()->for($user, 'recipient')->create(['created_at' => now()->subMinutes(50)]);
@@ -154,6 +188,7 @@ it('groups follows across people within a rolling hour and bumps the group', fun
 });
 
 it('splits follows after an interrupted gap longer than an hour regardless of filters', function (int $seconds, int $groups): void {
+    $this->travelTo(today()->setTime(12, 0));
     $user = User::factory()->create();
     $old = Notification::factory()->for($user, 'recipient')->create(['created_at' => now()->subSeconds($seconds)]);
     Notification::factory()->for($user, 'recipient')->replied()->create(['created_at' => now()->subSecond()]);
@@ -170,9 +205,10 @@ it('splits follows after an interrupted gap longer than an hour regardless of fi
         ->assertOk()->assertJsonCount($groups === 1 ? 2 : 1, 'data');
 })->with(['exactly one hour' => [3600, 1], 'one second too long' => [3601, 2], 'two days' => [172800, 2]]);
 
-it('extends the newest follow group after days without intervening relevant activity', function (): void {
+it('extends the newest follow group after hours without intervening relevant activity', function (): void {
+    $this->travelTo(today()->setTime(12, 0));
     $user = User::factory()->create();
-    $old = Notification::factory()->for($user, 'recipient')->create(['created_at' => now()->subDays(2)]);
+    $old = Notification::factory()->for($user, 'recipient')->create(['created_at' => now()->subHours(6)]);
     Notification::factory()->replied()->create(['created_at' => now()->subHour()]);
     $hidden = Notification::factory()->for($user, 'recipient')->replied()->create(['created_at' => now()->subMinute()]);
     $hidden->commit->delete();
@@ -184,7 +220,25 @@ it('extends the newest follow group after days without intervening relevant acti
         ->where('notifications.data.0.event_count', 2)->where('notifications.data.0.group_id', $old->id));
 });
 
-it('extends an old conversation only when it is still the newest group', function (bool $interrupted): void {
+it('never groups follows across days, even when they keep coming', function (): void {
+    $this->travelTo(today()->setTime(0, 30));
+    $user = User::factory()->create();
+    $old = Notification::factory()->for($user, 'recipient')->create(['created_at' => now()->subMinutes(50)]);
+    $yesterday = Notification::factory()->for($user, 'recipient')->create(['created_at' => now()->subMinutes(40)]);
+    $latest = Notification::factory()->for($user, 'recipient')->create();
+
+    expect(resolve(NotificationGroupsQuery::class)->unreadCount($user))->toBe(2);
+
+    foreach (['all', 'follows'] as $type) {
+        $this->actingAs($user)->get(route('notification.index', ['type' => $type]))->assertInertia(fn ($page) => $page
+            ->has('notifications.data', 2)
+            ->where('notifications.data.0.id', $latest->id)->where('notifications.data.0.event_count', 1)
+            ->where('notifications.data.1.id', $yesterday->id)->where('notifications.data.1.group_id', $old->id)
+            ->where('notifications.data.1.event_count', 2));
+    }
+});
+
+it('keeps a new mention separate from an older reply regardless of intervening activity', function (bool $interrupted): void {
     $user = User::factory()->create();
     $root = Commit::factory()->create();
     $parent = Commit::factory()->for($root, 'parent')->create();
@@ -201,15 +255,15 @@ it('extends an old conversation only when it is still the newest group', functio
     ]);
 
     $this->actingAs($user)->get(route('notification.index'))->assertInertia(fn ($page) => $page
-        ->has('notifications.data', $interrupted ? 3 : 1)->where('notifications.data.0.id', $latest->id)
-        ->where('notifications.data.0.event_count', $interrupted ? 1 : 2)
-        ->where('notifications.data.0.group_id', $interrupted ? $latest->id : $old->id));
+        ->has('notifications.data', $interrupted ? 3 : 2)->where('notifications.data.0.id', $latest->id)
+        ->where('notifications.data.0.event_count', 1)
+        ->where('notifications.data.0.group_id', $latest->id));
     $this->get(route('notification.index', ['type' => 'replies']))->assertInertia(fn ($page) => $page
         ->has('notifications.data', 1)->where('notifications.data.0.group_id', $old->id));
-    $this->getJson(route('notification-group.show', $latest))->assertOk()->assertJsonCount($interrupted ? 1 : 2, 'data');
+    $this->getJson(route('notification-group.show', $latest))->assertOk()->assertJsonCount(1, 'data');
 })->with(['uninterrupted' => false, 'interrupted' => true]);
 
-it('paginates complete groups rather than splitting a busy conversation', function (): void {
+it('paginates every reply in a busy conversation separately', function (): void {
     $user = User::factory()->create();
     $root = Commit::factory()->for($user)->create();
     for ($index = 0; $index < 24; $index++) {
@@ -221,16 +275,14 @@ it('paginates complete groups rather than splitting a busy conversation', functi
 
     $first = resolve(NotificationGroupsQuery::class)->paginate($user);
     expect($first->items())->toHaveCount(20)
-        ->and($first->items()[0]->event_count)->toBe(24);
+        ->and($first->items()[0]->event_count)->toBe(1);
     $firstIds = collect($first->items())->pluck('group_id')->all();
 
-    $members = $this->actingAs($user)->getJson(route('notification-group.show', $first->items()[0]))
-        ->assertOk()->assertJsonCount(20, 'data');
-    $this->getJson(route('notification-group.show', [$first->items()[0], 'cursor' => $members->json('next_cursor')]))
-        ->assertOk()->assertJsonCount(4, 'data');
+    $this->actingAs($user)->getJson(route('notification-group.show', $first->items()[0]))
+        ->assertOk()->assertJsonCount(1, 'data');
 
     $this->actingAs($user)->get(route('notification.index', ['cursor' => $first->nextCursor()->encode()]))
-        ->assertInertia(fn ($page) => $page->has('notifications.data', 2)
+        ->assertInertia(fn ($page) => $page->has('notifications.data', 20)
             ->where('notifications.data', fn ($items): bool => collect($items)->pluck('group_id')->intersect($firstIds)->isEmpty()));
 });
 
@@ -284,8 +336,8 @@ it('filters event types while retaining all members of each group', function ():
     Notification::factory()->for($user, 'recipient')->create();
 
     $this->actingAs($user)->get(route('notification.index', ['type' => 'replies']))
-        ->assertInertia(fn ($page) => $page->has('notifications.data', 1)
-            ->where('notifications.data.0.event_count', 2)->where('filters.type', 'replies'));
+        ->assertInertia(fn ($page) => $page->has('notifications.data', 2)
+            ->where('notifications.data.0.event_count', 1)->where('filters.type', 'replies'));
     $this->get(route('notification.index', ['type' => 'mentions']))
         ->assertInertia(fn ($page) => $page->has('notifications.data', 1));
     $this->get(route('notification.index', ['type' => 'follows']))
@@ -427,8 +479,6 @@ it('includes quotes in the inbox and filters their history without reading hidde
     $hidden->commit->update(['status' => CommitStatus::Pending]);
     Notification::factory()->for($user, 'recipient')->replied()->create();
 
-    expect(resolve(NotificationGroupsQuery::class)->unreadCount($user))->toBe(2);
-
     $this->actingAs($user)->get(route('notification.index'))->assertOk()
         ->assertInertia(fn ($page) => $page->has('notifications.data', 2));
     $this->get(route('notification.index', ['type' => 'quotes']))->assertOk()
@@ -444,6 +494,25 @@ it('includes quotes in the inbox and filters their history without reading hidde
 
     expect($quote->refresh()->read_at)->not->toBeNull()
         ->and($hidden->refresh()->read_at)->toBeNull();
+});
+
+it('shows quotes with the recipients commit they quote and never loads commits quoted by others', function (): void {
+    $user = User::factory()->create();
+    $quote = Notification::factory()->for($user, 'recipient')->quoted()->create();
+    $deleted = Notification::factory()->for($user, 'recipient')->quoted()->create(['created_at' => now()->subMinute()]);
+    $deleted->commit->quotedCommit->delete();
+
+    $reply = Notification::factory()->for($user, 'recipient')->replied()->create(['created_at' => now()->subMinutes(2)]);
+    $reply->commit->update(['quoted_commit_id' => Commit::factory()->pending()->create()->id]);
+
+    $this->actingAs($user)->get(route('notification.index'))->assertOk()
+        ->assertInertia(fn ($page) => $page->has('notifications.data', 3)
+            ->where('notifications.data.0.commit.quoted_commit.id', $quote->commit->quoted_commit_id)
+            ->where('notifications.data.0.commit.quoted_commit.body', $quote->commit->quotedCommit->body)
+            ->where('notifications.data.1.commit.quoted_commit.id', $deleted->commit->quoted_commit_id)
+            ->whereNot('notifications.data.1.commit.quoted_commit.deleted_at', null)
+            ->missing('notifications.data.1.commit.quoted_commit.body')
+            ->where('notifications.data.2.commit.quoted_commit', null));
 });
 
 it('excludes silenced actors from groups, history and read acknowledgements', function (string $relation, bool $recipientActs): void {
@@ -474,7 +543,7 @@ it('excludes silenced actors from groups, history and read acknowledgements', fu
     'actor blocked the recipient' => ['blocking', false],
 ]);
 
-it('groups surviving activity through an authorless ancestor without exposing its content', function (): void {
+it('keeps surviving replies separate through an authorless ancestor without exposing its content', function (): void {
     $user = User::factory()->create();
     $root = Commit::factory()->create();
     $parent = Commit::factory()->for($root, 'parent')->create(['body' => 'Deleted private ancestor']);
@@ -486,10 +555,50 @@ it('groups surviving activity through an authorless ancestor without exposing it
     expect($parent->withTrashed()->findOrFail($parent->id)->user_id)->toBeNull();
 
     $this->actingAs($user)->get(route('notification.index'))->assertOk()
-        ->assertInertia(fn ($page) => $page->has('notifications.data', 1)
+        ->assertInertia(fn ($page) => $page->has('notifications.data', 2)
             ->where('notifications.data.0.id', $latest->id)
-            ->where('notifications.data.0.group_id', $first->id)
-            ->where('notifications.data.0.event_count', 2));
+            ->where('notifications.data.0.group_id', $latest->id)
+            ->where('notifications.data.0.event_count', 1)
+            ->where('notifications.data.1.id', $first->id));
     $this->getJson(route('notification-group.show', $latest))->assertOk()
-        ->assertJsonCount(2, 'data')->assertDontSee('Deleted private ancestor');
+        ->assertJsonCount(1, 'data')->assertDontSee('Deleted private ancestor');
+});
+
+it('combines category filters and applies them to expanded groups', function (): void {
+    $user = User::factory()->create();
+    $root = Commit::factory()->create();
+    $reply = Commit::factory()->for($root, 'parent')->create();
+    $mention = Commit::factory()->for($root, 'parent')->create();
+    $notification = Notification::factory()->for($user, 'recipient')->for($reply, 'commit')->create(['type' => NotificationType::Replied]);
+    Notification::factory()->for($user, 'recipient')->for($mention, 'commit')->create(['type' => NotificationType::Mentioned]);
+    Notification::factory()->for($user, 'recipient')->create();
+
+    $this->actingAs($user)->get(route('notification.index', ['type' => 'replies,mentions']))
+        ->assertInertia(fn ($page) => $page->has('notifications.data', 2)
+            ->where('notifications.data.0.event_count', 1)->where('filters.type', 'replies,mentions'));
+    $this->getJson(route('notification-group.show', [$notification, 'type' => 'replies,mentions']))
+        ->assertOk()->assertJsonCount(1, 'data');
+});
+
+it('remembers selected categories for the current account including no categories', function (): void {
+    $user = User::factory()->create();
+    Notification::factory()->for($user, 'recipient')->create();
+    $cookie = 'notification_types_'.$user->id;
+
+    $this->actingAs($user)->get(route('notification.index', ['type' => 'none']))
+        ->assertCookie($cookie, 'none')
+        ->assertInertia(fn ($page) => $page->has('notifications.data', 0)->where('filters.type', 'none'));
+    $this->withCookie($cookie, 'none')->get(route('notification.index'))
+        ->assertInertia(fn ($page) => $page->has('notifications.data', 0)->where('filters.type', 'none'));
+    $this->get(route('notification.index', ['type' => 'all']))
+        ->assertCookie($cookie, 'all')
+        ->assertInertia(fn ($page) => $page->has('notifications.data', 1)->where('filters.type', 'all'));
+    $this->actingAs(User::factory()->create())->get(route('notification.index'))
+        ->assertInertia(fn ($page) => $page->where('filters.type', 'all'));
+});
+
+it('rejects invalid combinations of categories', function (): void {
+    $this->actingAs(User::factory()->create())
+        ->getJson(route('notification.index', ['type' => 'replies,secret']))
+        ->assertUnprocessable()->assertJsonValidationErrors('type');
 });

@@ -1,4 +1,15 @@
+import type { RemotesFrom } from '@/types/conversation';
 import type { Log } from '@/types/log';
+
+/**
+ * A lane from the palette, or a custom hex color.
+ */
+export type Lane = number | string;
+
+export type LiveStream = {
+    url: string;
+    thumbnail_url: string;
+};
 
 export type User = {
     id: string;
@@ -11,7 +22,12 @@ export type User = {
     company: string | null;
     has_sponsors_listing: boolean;
     has_github_account: boolean;
-    lane: number;
+    lane: Lane;
+    timezone: string | null;
+    /**
+     * Only set while the user is streaming.
+     */
+    live?: LiveStream | null;
     created_at: string;
     updated_at: string;
 };
@@ -28,11 +44,21 @@ export type Profile = User & {
 export type Auth = {
     user: Profile | null;
     isAdmin: boolean;
+    mustReadCommitRules: boolean;
     log: Log | null;
     unreadNotificationsCount: number;
+    unreadMessagesCount: number;
+    remotes: {
+        from: RemotesFrom;
+        pull_receipts: boolean;
+        requests: boolean;
+        everyone: boolean;
+    } | null;
+    pasteis: { remaining: number; day: string } | null;
 };
 
 export type SuggestedUser = User & {
     followed_by_following_count: number;
     followers_count: number;
+    follows_you: boolean;
 };

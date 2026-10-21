@@ -9,7 +9,6 @@ use App\Enums\Log;
 use App\Enums\NotificationType;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Jobs\UnfurlLink;
-use App\Models\Bookmark;
 use App\Models\Commit;
 use App\Models\CommitImage;
 use App\Models\Notification;
@@ -22,7 +21,6 @@ it('restores only the deletion state within thirty seconds', function (CommitSta
     $parent = Commit::factory()->create();
     $commit = Commit::factory()->for($parent, 'parent')->create(['status' => $status]);
     $commit->stars()->attach($commit->user);
-    $bookmark = Bookmark::factory()->create(['user_id' => $commit->user_id, 'commit_id' => $commit->id]);
     $original = $commit->only(['body', 'status', 'parent_id', 'created_at']);
 
     $this->actingAs($commit->user)->delete(route('commit.destroy', $commit))->assertRedirect();
@@ -34,8 +32,7 @@ it('restores only the deletion state within thirty seconds', function (CommitSta
         ->assertInertiaFlash('restored.id', $commit->id)
         ->assertInertiaFlash('restored.stars_count', 1)
         ->assertInertiaFlash('restored.starred', true)
-        ->assertInertiaFlash('restored.is_saved', true)
-        ->assertInertiaFlash('restored.saved_order', $bookmark->id);
+        ->assertInertiaFlash('restored.starred_order', $commit->stars()->newPivotQuery()->where('user_id', $commit->user_id)->value('created_at'));
 
     expect($commit->refresh()->only(array_keys($original)))->toEqual($original);
     $this->assertNotSoftDeleted($commit);
@@ -158,6 +155,42 @@ it('returns the actual visible parent count when undo replaces a tombstone', fun
     $this->actingAs($reply->user)->post(route('commit-restoration.store', $reply))
         ->assertSessionHasNoErrors()
         ->assertInertiaFlash('restored.parent.replies_count', 1);
+});
+
+it('leaves the restored next commit of a thread out of its parent count', function (): void {
+    $parent = Commit::factory()->create();
+    $next = Commit::factory()->for($parent, 'parent')->for($parent->user)->create();
+    Commit::factory()->for($parent, 'parent')->create();
+    resolve(DeleteCommit::class)->handle($next);
+
+    $this->actingAs($next->user)->post(route('commit-restoration.store', $next))
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('restored.parent.replies_count', 1)
+        ->assertInertiaFlash('restored.parent.continuation_id', $next->id);
+});
+
+it('leaves the next commit of a thread out of the count of a restored quote', function (): void {
+    $quoted = Commit::factory()->create();
+    Commit::factory()->for($quoted, 'parent')->for($quoted->user)->create();
+    Commit::factory()->for($quoted, 'parent')->create();
+    $quote = Commit::factory()->for($quoted, 'quotedCommit')->create();
+    resolve(DeleteCommit::class)->handle($quote);
+
+    $this->actingAs($quote->user)->post(route('commit-restoration.store', $quote))
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('restored.quoted_commit.replies_count', 2);
+});
+
+it('counts every reply of a deleted parent when restoring one of them', function (): void {
+    $parent = Commit::factory()->create();
+    Commit::factory()->for($parent, 'parent')->for($parent->user)->create();
+    $reply = Commit::factory()->for($parent, 'parent')->create();
+    resolve(DeleteCommit::class)->handle($reply);
+    resolve(DeleteCommit::class)->handle($parent);
+
+    $this->actingAs($reply->user)->post(route('commit-restoration.store', $reply))
+        ->assertSessionHasNoErrors()
+        ->assertInertiaFlash('restored.parent.replies_count', 2);
 });
 
 it('keeps a deleted parent as a tombstone when restoring its reply', function (): void {

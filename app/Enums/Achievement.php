@@ -16,8 +16,9 @@ enum Achievement: string
     case Stargazer = 'stargazer';
     case Superstar = 'superstar';
     case Pipe = 'pipe';
-    case MaxPayload = 'max_payload';
     case AuthorizedKeys = 'authorized_keys';
+    case SweetTooth = 'sweet_tooth';
+    case Luddite = 'luddite';
 
     public function label(): string
     {
@@ -32,8 +33,9 @@ enum Achievement: string
             self::Stargazer => 'stargazer',
             self::Superstar => 'superstar',
             self::Pipe => 'pipe',
-            self::MaxPayload => 'max payload',
             self::AuthorizedKeys => 'authorized_keys',
+            self::SweetTooth => 'sweet tooth',
+            self::Luddite => 'luddite',
         };
     }
 
@@ -50,8 +52,9 @@ enum Achievement: string
             self::Stargazer => 'Starred 10 commits by other developers.',
             self::Superstar => 'Received 25 stars on your commits.',
             self::Pipe => 'Joined conversations with 5 replies to other developers.',
-            self::MaxPayload => 'Committed an exact 280-character post.',
             self::AuthorizedKeys => 'Provisioned a public SSH key from GitHub.',
+            self::SweetTooth => 'Received 100 pastéis across your account.',
+            self::Luddite => 'Unfollowed Tom. Costs 100 XP until you follow him again.',
         };
     }
 
@@ -68,8 +71,9 @@ enum Achievement: string
             self::Stargazer => 'star',
             self::Superstar => 'sparkles',
             self::Pipe => 'git-merge',
-            self::MaxPayload => 'maximize',
             self::AuthorizedKeys => 'key',
+            self::SweetTooth => 'cookie',
+            self::Luddite => 'bot-off',
         };
     }
 
@@ -86,8 +90,9 @@ enum Achievement: string
             self::Stargazer => 10,
             self::Superstar => 25,
             self::Pipe => 5,
-            self::MaxPayload => 1,
             self::AuthorizedKeys => 1,
+            self::SweetTooth => 100,
+            self::Luddite => 1,
         };
     }
 }

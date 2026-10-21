@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\CreateTomFriendship;
 use App\Enums\Achievement;
 use App\Enums\CommitStatus;
 use App\Enums\UnixRank;
@@ -26,7 +27,7 @@ it('calculates initial rank and zero progress for a new user without activity', 
         ->and($result['level_progress'])->toBe(0)
         ->and($result['ranks'])->toHaveCount(6)
         ->and($result['xp_breakdown']['commits']['xp'])->toBe(0)
-        ->and($result['badges'])->toHaveCount(12);
+        ->and($result['badges'])->toHaveCount(13);
 
     foreach ($result['badges'] as $badge) {
         expect($badge['unlocked'])->toBeFalse()
@@ -48,35 +49,6 @@ it('unlocks init badge upon first commit and awards xp', function (): void {
         ->and($initBadge['progress'])->toBe(1)
         // XP: 10 (commit) + 15 (1-day streak) = 25
         ->and($result['xp'])->toBe(25);
-});
-
-it('unlocks max_payload badge for an exact 280-character post and handles multibyte unicode', function (): void {
-    $user = User::factory()->create();
-
-    // 279 characters -> not unlocked
-    $shortCommit = Commit::factory()->for($user)->create([
-        'body' => str_repeat('a', 279),
-    ]);
-
-    $result = resolve(UserAchievementsQuery::class)->get($user, $user);
-    $badge = collect($result['badges'])->firstWhere('id', Achievement::MaxPayload->value);
-    expect($badge['unlocked'])->toBeFalse();
-
-    // Delete short commit and create exact 280-character post with multibyte emojis
-    $shortCommit->forceDelete();
-
-    // 278 'a's + 2 multibyte rocket emojis (each 1 char length in UTF-8, 4 bytes) = exact 280 characters
-    $exact280Body = str_repeat('a', 278).'🚀🚀';
-    expect(mb_strlen($exact280Body))->toBe(280);
-
-    Commit::factory()->for($user)->create(['body' => $exact280Body]);
-
-    $result = resolve(UserAchievementsQuery::class)->get($user, $user);
-    $badge = collect($result['badges'])->firstWhere('id', Achievement::MaxPayload->value);
-
-    expect($badge)->not->toBeNull()
-        ->and($badge['unlocked'])->toBeTrue()
-        ->and($badge['progress'])->toBe(1);
 });
 
 it('unlocks authorized_keys badge when user has linked public ssh keys from github', function (): void {
@@ -283,4 +255,43 @@ it('reuses passed streaks without re-running streak calculation', function (): v
 
     expect($result['xp_breakdown']['streak']['count'])->toBe(42)
         ->and($result['xp_breakdown']['streak']['xp'])->toBe(42 * 15);
+});
+
+it('tracks sweet tooth from the account total without requiring surviving commits or pasteis mode', function (int $received, int $progress, bool $unlocked): void {
+    $user = User::factory()->create(['pasteis_received' => $received, 'pasteis_mode' => false]);
+
+    $result = resolve(UserAchievementsQuery::class)->get($user, null);
+
+    expect(collect($result['badges'])->firstWhere('id', 'sweet_tooth'))->toMatchArray([
+        'name' => 'sweet tooth',
+        'target' => 100,
+        'progress' => $progress,
+        'unlocked' => $unlocked,
+    ])->and($result['xp'])->toBe(0);
+})->with([
+    'below threshold' => [99, 99, false],
+    'at threshold' => [100, 100, true],
+    'above threshold' => [125, 100, true],
+]);
+
+it('does not grant luddite to Tom or someone he has never befriended', function (): void {
+    $tom = User::factory()->create(['github_id' => CreateTomFriendship::GITHUB_ID]);
+    $user = User::factory()->create();
+
+    foreach ([$tom, $user] as $profile) {
+        $result = resolve(UserAchievementsQuery::class)->get($profile, null);
+
+        expect(collect($result['badges'])->firstWhere('id', 'luddite')['unlocked'])->toBeFalse()
+            ->and($result['xp_breakdown']['luddite']['xp'])->toBe(0);
+    }
+});
+
+it('does not identify Tom by a mutable username', function (): void {
+    $user = User::factory()->create();
+    $other = User::factory()->create(['username' => 'tom']);
+    $other->following()->attach($user);
+
+    $result = resolve(UserAchievementsQuery::class)->get($user, null);
+
+    expect(collect($result['badges'])->firstWhere('id', 'luddite')['unlocked'])->toBeFalse();
 });

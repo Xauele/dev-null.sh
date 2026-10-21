@@ -13,23 +13,38 @@ final readonly class EmojiShortcodes
      */
     private array $map;
 
+    private string $pattern;
+
     public function __construct(private CodeSpans $codeSpans)
     {
         $this->map = $this->load();
+        $this->pattern = $this->pattern();
     }
 
     /**
-     * Replaces :heart, :like, and the rest with their emoji, leaving a shortcode inside a
-     * longer word (like :hearted) or in code untouched. Mirrors the frontend's inline replacement.
+     * Replaces :heart:, :like:, and the rest with their emoji, leaving a shortcode without its
+     * closing colon (like :heart) or in code untouched. Mirrors the frontend's inline replacement.
      */
     public function replace(string $text): string
     {
-        $pattern = $this->pattern();
+        if (! str_contains($text, ':')) {
+            return $text;
+        }
 
         return $this->codeSpans->mapProse(
             $text,
-            fn (string $prose): string => (string) preg_replace_callback($pattern, $this->replaceMatch(...), $prose),
+            fn (string $prose): string => (string) preg_replace_callback($this->pattern, $this->replaceMatch(...), $prose),
         );
+    }
+
+    /**
+     * Every emoji a shortcode stands for, once each.
+     *
+     * @return list<string>
+     */
+    public function emoji(): array
+    {
+        return array_values(array_unique($this->map));
     }
 
     /**
@@ -54,7 +69,7 @@ final readonly class EmojiShortcodes
 
         $names = array_map(static fn (string $name): string => preg_quote($name, '/'), $names);
 
-        return '/:('.implode('|', $names).'):?(?![A-Za-z0-9_])/';
+        return '/:('.implode('|', $names).'):/';
     }
 
     /**

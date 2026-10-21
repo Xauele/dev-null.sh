@@ -43,7 +43,7 @@ it('groups stars per commit, newest stargazer first', function (): void {
         starAt($stargazer, $commit, 10 - $index);
     }
 
-    $groups = resolve(NotificationGroupsQuery::class)->paginate($commit->user);
+    $groups = resolve(NotificationGroupsQuery::class)->paginate($commit->user, 'stars');
 
     $group = $groups->items()[0];
 
@@ -55,28 +55,30 @@ it('groups stars per commit, newest stargazer first', function (): void {
         ->and($group->actors->pluck('id')->all())->toBe([$stargazers[4]->id, $stargazers[3]->id, $stargazers[2]->id]);
 });
 
-it('groups replies per replied commit, counting each replier once', function (): void {
+it('shows every reply to a commit as its own notification', function (): void {
     $commit = Commit::factory()->create();
     $bob = User::factory()->create();
     $carol = User::factory()->create();
 
-    replyAt($bob, $commit, 3);
-    replyAt($carol, $commit, 2);
+    $first = replyAt($bob, $commit, 3);
+    $second = replyAt($carol, $commit, 2);
     $latest = replyAt($bob, $commit, 1);
     Notification::query()->where('commit_id', $latest->id)->update(['read_at' => now()]);
 
     $groups = resolve(NotificationGroupsQuery::class)->paginate($commit->user);
 
-    $group = $groups->items()[0];
+    expect($groups->items())->toHaveCount(3)
+        ->and(array_map(fn (Notification $group): string => $group->commit_id, $groups->items()))->toBe([$latest->id, $second->id, $first->id]);
 
-    expect($groups->items())->toHaveCount(1)
-        ->and($group->type)->toBe(NotificationType::Replied)
-        ->and($group->commit_id)->toBe($latest->id)
-        ->and($group->subject_id)->toBe($commit->id)
-        ->and($group->event_count)->toBe(3)
-        ->and($group->unread_count)->toBe(2)
-        ->and($group->actors_count)->toBe(2)
-        ->and($group->actors->pluck('id')->all())->toBe([$bob->id, $carol->id]);
+    foreach ($groups->items() as $index => $group) {
+        expect($group->type)->toBe(NotificationType::Replied)
+            ->and($group->subject_id)->toBe($commit->id)
+            ->and($group->group_id)->toBe($group->id)
+            ->and($group->event_count)->toBe(1)
+            ->and($group->unread_count)->toBe($index === 0 ? 0 : 1)
+            ->and($group->actors_count)->toBe(1)
+            ->and($group->actors->sole()->id)->toBe($group->actor_id);
+    }
 });
 
 it('keeps stars and conversations apart while grouping followers', function (): void {
@@ -186,7 +188,7 @@ it('loads any number of groups with the same number of queries', function (int $
 
     resolve(NotificationGroupsQuery::class)->paginate($user);
 
-    expect(DB::getQueryLog())->toHaveCount(5);
+    expect(DB::getQueryLog())->toHaveCount(4);
 })->with([1, 5]);
 
 it('skips loading stacked actors when nothing is grouped', function (): void {
@@ -212,6 +214,96 @@ it('counts the unread groups', function (): void {
     Notification::factory()->for($user, 'recipient')->read()->create();
 
     expect(resolve(NotificationGroupsQuery::class)->unreadCount($user))->toBe(2);
+});
+
+it('loads every group refreshed since a point, including groups that began before it', function (): void {
+    $user = User::factory()->create();
+
+    Commit::factory()->for($user)->count(NotificationGroupsQuery::PER_PAGE + 2)->create()
+        ->each(function (Commit $commit, int $index): void {
+            starAt(User::factory()->create(), $commit, 1000 + $index);
+            starAt(User::factory()->create(), $commit, $index + 1);
+        });
+
+    $through = now()->subSeconds((NotificationGroupsQuery::PER_PAGE + 1) * 60 + 30)->toImmutable();
+    $groups = resolve(NotificationGroupsQuery::class)->paginate($user, through: $through);
+
+    expect($groups->items())->toHaveCount(NotificationGroupsQuery::PER_PAGE + 1)
+        ->and($groups->items()[0]->event_count)->toBe(2)
+        ->and($groups->hasMorePages())->toBeTrue();
+});
+
+it('counts unread groups that began before the oldest unread notification like grouping everything does', function (): void {
+    $user = User::factory()->create();
+    [$starred, $root] = Commit::factory()->for($user)->count(2)->create()->all();
+
+    starAt(User::factory()->create(), $starred, 300);
+    followAt(User::factory()->create(), $user, 200);
+    replyAt(User::factory()->create(), $root, 190);
+    Notification::query()->update(['read_at' => now()]);
+    followAt(User::factory()->create(), $user, 150);
+    replyAt(User::factory()->create(), $root, 140);
+    starAt(User::factory()->create(), $starred, 10);
+    replyAt(User::factory()->create(), $root, 5);
+
+    $query = resolve(NotificationGroupsQuery::class);
+
+    expect($query->unreadCount($user))->toBe(4)
+        ->and($query->events($user)->where('group_rank', 1)->where('unread_count', '>', 0)->count())->toBe(4);
+});
+
+it('counts no unread groups without unread notifications', function (): void {
+    $user = User::factory()->create();
+    Notification::factory()->for($user, 'recipient')->read()->create();
+
+    expect(resolve(NotificationGroupsQuery::class)->unreadCount($user))->toBe(0);
+});
+
+it('keeps replies separate from mentions even when their thread root is missing or a reply', function (): void {
+    $user = User::factory()->create();
+    $root = Commit::factory()->for($user)->create();
+    $reply = Commit::factory()->for($root, 'parent')->create();
+    $nested = Commit::factory()->for($reply, 'parent')->create();
+    $reply->forceFill(['root_id' => null])->save();
+    $nested->forceFill(['root_id' => $reply->id])->save();
+
+    $this->travelTo(now()->subMinutes(3), fn () => Notification::factory()->for($user, 'recipient')->for($root, 'commit')->create(['type' => NotificationType::Mentioned]));
+    $this->travelTo(now()->subMinutes(2), fn () => Notification::factory()->for($user, 'recipient')->for($reply, 'commit')->create(['type' => NotificationType::Replied]));
+    Notification::factory()->for($user, 'recipient')->for($nested, 'commit')->create(['type' => NotificationType::Replied]);
+
+    $groups = resolve(NotificationGroupsQuery::class)->paginate($user)->items();
+
+    expect($groups)->toHaveCount(3)
+        ->and(array_map(fn (Notification $group): string => $group->commit_id, $groups))->toBe([$nested->id, $reply->id, $root->id])
+        ->and(array_map(fn (Notification $group): int => $group->event_count, $groups))->toBe([1, 1, 1]);
+});
+
+it('counts no unread groups without grouping anything when everything is read', function (): void {
+    $user = User::factory()->create();
+    starAt(User::factory()->create(), Commit::factory()->for($user)->create(), 1);
+    Notification::query()->update(['read_at' => now()]);
+
+    DB::enableQueryLog();
+
+    expect(resolve(NotificationGroupsQuery::class)->unreadCount($user))->toBe(0)
+        ->and(DB::getQueryLog())->toHaveCount(1);
+});
+
+it('counts the same unread groups as grouping the whole history', function (): void {
+    $user = User::factory()->create();
+    $commit = Commit::factory()->for($user)->create();
+    [$first, $second, $third] = User::factory()->count(3)->create()->all();
+
+    followAt($first, $user, 300);
+    followAt($second, $user, 270);
+    starAt(User::factory()->create(), $commit, 180);
+    followAt($third, $user, 60);
+    Notification::query()->where('actor_id', $first->id)->update(['read_at' => now()]);
+
+    $query = resolve(NotificationGroupsQuery::class);
+    $wholeHistory = $query->events($user)->where('group_rank', 1)->where('unread_count', '>', 0)->count();
+
+    expect($query->unreadCount($user))->toBe(3)->toBe($wholeHistory);
 });
 
 it('compiles the grouping window for each database dialect with bound recipient and filter values', function (string $driver, string $gap): void {

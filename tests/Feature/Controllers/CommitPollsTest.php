@@ -9,9 +9,7 @@ use App\Enums\CommitStatus;
 use App\Enums\Log;
 use App\Enums\NotificationType;
 use App\Enums\PollDuration;
-use App\Http\Middleware\HandleInertiaRequests;
 use App\Jobs\UnfurlLink;
-use App\Models\Bookmark;
 use App\Models\Commit;
 use App\Models\Poll;
 use App\Models\PollVote;
@@ -269,13 +267,13 @@ it('shows the poll of a quoted commit in moderation and after undoing a deletion
         ->assertInertiaFlash('restored.quoted_commit.poll.options.0.label', 'Tabs');
 });
 
-it('shows polls on profiles and saved commits', function (): void {
+it('shows polls on profiles and starred commits', function (): void {
     $user = User::factory()->create();
     $author = User::factory()->create();
     $pinned = Poll::factory()->for(Commit::factory()->for($author))->withOptions('Tabs', 'Spaces')->create();
     $latest = Poll::factory()->for(Commit::factory()->for($author))->withOptions('Vim', 'Emacs')->create();
     $author->update(['pinned_commit_id' => $pinned->commit_id]);
-    Bookmark::factory()->create(['user_id' => $user->id, 'commit_id' => $latest->commit_id]);
+    $user->starredCommits()->attach($latest->commit);
 
     $this->actingAs($user)
         ->get(route('user.show', $author))
@@ -283,7 +281,7 @@ it('shows polls on profiles and saved commits', function (): void {
             ->where('pinnedCommit.poll.options.0.label', 'Tabs')
             ->where('commits.data.0.poll.options.0.label', 'Vim'));
 
-    $this->get(route('bookmark.index'))
+    $this->get(route('starred.index'))
         ->assertInertia(fn ($page) => $page->where('commits.data.0.poll.options.0.label', 'Vim'));
 });
 
@@ -299,7 +297,7 @@ it('shows the poll of a pending commit to moderators', function (): void {
 });
 
 it('loads the polls of the log with a bounded number of queries', function (): void {
-    $user = User::factory()->create(['log' => Log::Trending]);
+    $user = User::factory()->create(['log' => Log::Trending, 'last_seen_at' => today()]);
     Poll::factory()->withOptions('Tabs', 'Spaces')->create();
     $this->actingAs($user);
     DB::enableQueryLog();
@@ -313,32 +311,6 @@ it('loads the polls of the log with a bounded number of queries', function (): v
     $this->get(route('log.show', Log::Trending))->assertOk()->assertInertia(fn ($page) => $page->has('commits.data', 20));
     expect(count(DB::getQueryLog()))->toBe($singleCount);
     DB::disableQueryLog();
-});
-
-it('keeps poll choices and results when newer commits are prepended to the ranked log', function (): void {
-    $user = User::factory()->create();
-    $seen = Commit::factory()->create(['created_at' => now()->subMinute()]);
-    $poll = Poll::factory()->withOptions('Tabs', 'Spaces')->create();
-    PollVote::factory()->for($poll->options[1], 'option')->for($user)->create();
-
-    $this->actingAs($user)->get(route('log.show', Log::Trending))
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page->where('newestCommitId', $poll->commit_id));
-
-    $this->withHeaders([
-        'X-Inertia' => 'true',
-        'X-Inertia-Version' => (string) new HandleInertiaRequests()->version(request()),
-        'X-Inertia-Partial-Component' => 'log/show',
-        'X-Inertia-Partial-Data' => 'latestCommits',
-    ])->get(route('log.show', ['log' => Log::Trending, 'since' => $seen->id]))
-        ->assertOk()
-        ->assertJsonCount(1, 'props.latestCommits')
-        ->assertJsonPath('props.latestCommits.0.id', $poll->commit_id)
-        ->assertJsonPath('props.latestCommits.0.poll.has_voted', true)
-        ->assertJsonPath('props.latestCommits.0.poll.total_votes', 1)
-        ->assertJsonPath('props.latestCommits.0.poll.options.1.label', 'Spaces')
-        ->assertJsonPath('props.latestCommits.0.poll.options.1.voted', true)
-        ->assertJsonPath('prependProps', ['latestCommits']);
 });
 
 it('shows public polls to guests while hiding open results and voter identities', function (string $endpoint, bool $closed): void {

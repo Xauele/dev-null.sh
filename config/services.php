@@ -16,10 +16,21 @@ return [
     |
     */
 
+    'fathom' => [
+        'token' => env('FATHOM_API_TOKEN'),
+        'site_id' => env('FATHOM_SITE_ID', 'HTQONOPD'),
+    ],
+
     'github' => [
+        'repository' => env('GITHUB_REPOSITORY', 'nunomaduro/dev-null.sh'),
         'client_id' => env('GITHUB_CLIENT_ID'),
         'client_secret' => env('GITHUB_CLIENT_SECRET'),
         'redirect' => env('GITHUB_REDIRECT_URI', '/auth/github/callback'),
+    ],
+
+    'github_app' => [
+        'id' => env('GITHUB_APP_ID'),
+        'private_key' => env('GITHUB_APP_PRIVATE_KEY'),
     ],
 
     'openai' => [

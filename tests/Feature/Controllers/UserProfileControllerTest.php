@@ -29,8 +29,20 @@ it('renders the chosen and automatic lanes', function (?int $preferredLane): voi
             ->where('auth.user.lane', $preferredLane ?? 4));
 })->with([null, 1]);
 
-it('renders the links to embed the activity graph', function (): void {
-    $user = User::factory()->create(['username' => 'octocat']);
+it('renders the custom color as the chosen lane', function (): void {
+    $user = User::factory()->create(['lane_color' => '#1a2b3c']);
+
+    $response = $this->actingAs($user)
+        ->get(route('user-profile.edit'));
+
+    $response->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('preferredLane', '#1a2b3c')
+            ->where('auth.user.lane', '#1a2b3c'));
+});
+
+it('renders the activity graph links with the timezone preference', function (?string $timezone): void {
+    $user = User::factory()->create(['username' => 'octocat', 'timezone' => $timezone]);
 
     $response = $this->actingAs($user)
         ->get(route('user-profile.edit'));
@@ -38,8 +50,9 @@ it('renders the links to embed the activity graph', function (): void {
     $response->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('activityGraphUrl', url('/@octocat/graph.svg'))
-            ->where('profileUrl', url('/@octocat')));
-});
+            ->where('profileUrl', url('/@octocat'))
+            ->where('auth.user.timezone', $timezone));
+})->with([null, 'Europe/Budapest']);
 
 it('redirects settings to profile settings', function (): void {
     $user = User::factory()->create();
@@ -174,4 +187,15 @@ it('requires authentication to sync', function (): void {
     $response->assertRedirectToRoute('home');
 
     Http::assertNothingSent();
+});
+
+it('shows the private translation preference and supported choices only in own settings', function (): void {
+    $user = User::factory()->create(['translation_language' => 'ja']);
+    $other = User::factory()->create(['translation_language' => 'de']);
+
+    $this->actingAs($user)->get(route('user-profile.edit', ['user_id' => $other->id]))
+        ->assertOk()->assertInertia(fn ($page) => $page
+        ->where('translationLanguage', 'ja')
+        ->where('translationLanguages', fn ($languages): bool => collect($languages)->contains(fn ($language): bool => $language['code'] === 'hu' && $language['name'] === 'Hungarian' && $language['nativeName'] === 'magyar'))
+        ->missing('auth.user.translation_language'));
 });

@@ -6,7 +6,6 @@ namespace App\Http\Requests;
 
 use App\Models\Commit;
 use Illuminate\Foundation\Http\FormRequest;
-use Inertia\Inertia;
 
 final class ShowLogRequest extends FormRequest
 {
@@ -22,7 +21,18 @@ final class ShowLogRequest extends FormRequest
     {
         return [
             'since' => ['nullable', 'uuid'],
+            'through' => ['nullable', 'uuid'],
         ];
+    }
+
+    /**
+     * Keep the loaded range when a follow changes who belongs in the log.
+     */
+    public function through(): ?Commit
+    {
+        return $this->filled('through')
+            ? Commit::query()->withTrashed()->visibleTo($this->user())->find($this->string('through')->value())
+            : null;
     }
 
     /**
@@ -35,13 +45,8 @@ final class ShowLogRequest extends FormRequest
             : null;
     }
 
-    /**
-     * The commit the user has just committed from the log, if they have.
-     */
-    public function committed(): ?Commit
+    public function prepareForValidation(): void
     {
-        $id = data_get(Inertia::getFlashed($this), 'committed.id');
-
-        return is_string($id) ? Commit::query()->find($id) : null;
+        $this->merge(['through' => $this->header('X-Log-Through')]);
     }
 }

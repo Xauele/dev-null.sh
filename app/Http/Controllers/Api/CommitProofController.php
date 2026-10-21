@@ -33,7 +33,8 @@ final readonly class CommitProofController
         }
 
         abort_unless(
-            $signature->verify((string) $record->payload, SignedCommits::Namespace)
+            in_array((string) $record->namespace, [SignedCommits::Namespace, SignedCommits::ImagesNamespace], true)
+            && $signature->verify((string) $record->payload, (string) $record->namespace)
             && hash_equals((string) $record->public_key, $signature->publicKey->toOpenSsh())
             && hash_equals((string) $record->fingerprint, $signature->publicKey->fingerprint())
             && hash_equals((string) $record->fingerprint, (string) $commit->signer_fingerprint),
@@ -45,7 +46,7 @@ final readonly class CommitProofController
             'commit_id' => $commit->id,
             'html_url' => route('commit.show', [$commit->user, $commit]),
             'signer' => $commit->user?->username,
-            'namespace' => SignedCommits::Namespace,
+            'namespace' => (string) $record->namespace,
             'public_key' => $signature->publicKey->toOpenSsh(),
             'fingerprint' => $signature->publicKey->fingerprint(),
             'payload_base64' => base64_encode((string) $record->payload),

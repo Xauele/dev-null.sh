@@ -11,7 +11,8 @@ use App\Models\SshKey;
 use App\Models\User;
 use App\Services\SignedCommits;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Testing\TestResponse;
 use Tests\Support\SshKeyPair;
 
@@ -189,4 +190,47 @@ it('exports signatures as part of the author data export', function (): void {
 
     expect($signatures)->toHaveCount(1)
         ->and($signatures[0]['public_key'])->toBe($this->proofKeyPair->publicKey->toOpenSsh());
+});
+
+
+it('stores image proofs without losing signed image uploads', function (): void {
+    Storage::fake();
+
+    $image = UploadedFile::fake()->image('signed.png', 12, 12);
+    $hash = (string) hash_file('sha256', $image->getRealPath());
+    $signed = signedCommit($this->proofKeyPair, 'Signed image', imageHashes: [$hash]);
+
+    $this->call('POST', route('cli-commit.store'), files: [
+        'payload' => UploadedFile::fake()->createWithContent('commit', $signed['payload']),
+        'images' => [$image],
+    ], server: ['HTTP_X_SSH_SIGNATURE' => $signed['signature']])->assertCreated();
+
+    $commit = $this->proofUser->commits()->sole();
+    $commit->forceFill(['status' => CommitStatus::Approved])->save();
+
+    expect($commit->images)->toHaveCount(1);
+
+    $response = $this->getJson(route('api-commit-proof.show', $commit))->assertOk()
+        ->assertJsonPath('namespace', SignedCommits::ImagesNamespace);
+
+    $payload = (string) base64_decode($response->json('payload_base64'), true);
+    $proof = SshSignature::parse($response->json('ssh_signature'));
+
+    expect($payload)->toBe($signed['payload'])
+        ->and($proof->verify($payload, SignedCommits::ImagesNamespace))->toBeTrue()
+        ->and($proof->verify($payload, SignedCommits::Namespace))->toBeFalse()
+        ->and($payload)->toContain($hash);
+});
+
+it('rejects corrupted receipt namespaces', function (): void {
+    submitPortableProof(signedCommit($this->proofKeyPair, 'Signed message'))->assertCreated();
+
+    $commit = $this->proofUser->commits()->sole();
+    $commit->forceFill(['status' => CommitStatus::Approved])->save();
+
+    DB::table('commit_signatures')->where('commit_id', $commit->id)->update([
+        'namespace' => 'devnull-api',
+    ]);
+
+    $this->getJson(route('api-commit-proof.show', $commit))->assertNotFound();
 });
