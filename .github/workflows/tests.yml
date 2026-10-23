@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - production
+      - ci/upstream-production-053bb30
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -147,4 +148,4 @@ jobs:
         run: bun run build
 
       - name: Tests
-        run: composer test:unit
+        run: GITHUB_REPOSITORY=dev-null-sh/dev-null.sh composer test:unit
