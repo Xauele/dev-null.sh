@@ -16,6 +16,7 @@ GitHub Actions runner. Units are wall time in milliseconds.
 | --- | ---: | ---: | ---: | ---: |
 | [Run 39575154091](https://github.com/Xauele/dev-null.sh/actions/runs/39575154091) | 36.393 | 13.022 | 37.215 | 13.601 |
 | [Run 39575841934](https://github.com/Xauele/dev-null.sh/actions/runs/39575841934) | 40.171 | 13.076 | 42.053 | 13.335 |
+| [Run 39926403949](https://github.com/Xauele/dev-null.sh/actions/runs/39926403949) | 33.736 | 11.557 | 34.852 | 11.649 |
 
 The observed **render-only median ratio** is about **2.8x to 3.1x**.
 This is a microbenchmark, **not an endpoint speedup**: it excludes SQL,
@@ -24,14 +25,17 @@ latency. Results are runner- and fixture-specific, not production SLO claims.
 
 ## Correctness and integration
 
-Canonical XML structures matched in both benchmark runs. The new unit tests
+Canonical XML structures matched in all three benchmark runs. The new unit tests
 also validate escaping, image nodes, empty sitemaps and 10,000 URL entries.
 The existing feature tests cover image order and ETag.
 
-The fork's full CI is not green. The first run encountered unrelated baseline
-failures in several non-sitemap features; the targeted sitemap feature tests
-then returned empty HTTP bodies and unexpected 200s even for missing routes,
-indicating a broader test environment/runtime failure. Therefore, do not
-treat those feature tests as verified until that issue is resolved.
+The refreshed validation on upstream production `053bb309` passes all four
+CI jobs (lint, types, type coverage and tests). The PHP suite reports 3,977
+passed tests, 21,982 assertions and 100% coverage. The fork harness sets
+`GITHUB_REPOSITORY=dev-null-sh/dev-null.sh` for existing upstream fixtures;
+that environment override and the benchmark script are not part of this PR.
+
+Earlier runs on the old setup failed and are retained in the links above;
+only the refreshed run is evidence of passing integration tests.
 
 The existing single-query sitemap SQL introduced upstream remains intact.
