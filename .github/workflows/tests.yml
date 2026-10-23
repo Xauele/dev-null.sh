@@ -147,4 +147,4 @@ jobs:
         run: bun run build
 
       - name: Tests
-        run: composer test:unit
+        run: GITHUB_REPOSITORY=dev-null-sh/dev-null.sh composer test:unit
