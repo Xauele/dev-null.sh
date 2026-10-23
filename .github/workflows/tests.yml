@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - production
+      - ci/upstream-production-053bb30
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -146,5 +147,8 @@ jobs:
         if: steps.build-cache.outputs.cache-hit != 'true'
         run: bun run build
 
+      - name: Benchmark sitemap XML (rendering only)
+        run: php benchmarks/sitemap-xml.php
+
       - name: Tests
-        run: composer test:unit
+        run: GITHUB_REPOSITORY=dev-null-sh/dev-null.sh composer test:unit
