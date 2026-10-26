@@ -149,5 +149,6 @@ jobs:
 
       - name: Tests against current upstream
         run: |
-          GITHUB_REPOSITORY=dev-null-sh/dev-null.sh composer test:unit
-          bunx vp test tests/Unit/MermaidDiagram.test.tsx
+          GITHUB_REPOSITORY=dev-null-sh/dev-null.sh php vendor/bin/pest tests/Unit/Services/CodeSpansTest.php
+          LARAVEL_BYPASS_ENV_CHECK=1 bunx vp test tests/Unit/MermaidDiagram.test.tsx
+          bun run test:unit
