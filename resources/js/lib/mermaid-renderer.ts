@@ -5,7 +5,7 @@
 export const MAX_DIAGRAM_LENGTH = 6000;
 
 type DiagramTheme = 'light' | 'dark';
-type Mermaid = typeof import('mermaid')['default'];
+type Mermaid = (typeof import('mermaid'))['default'];
 
 let engine: Promise<Mermaid> | null = null;
 let renderQueue: Promise<void> = Promise.resolve();
@@ -21,9 +21,14 @@ function loadMermaid(): Promise<Mermaid> {
  * Mermaid writes temporary DOM nodes during rendering. Its shared configuration is global,
  * so serialize renders to avoid cross-diagram races and theme bleeding.
  */
-export function renderMermaid(source: string, theme: DiagramTheme): Promise<string> {
+export function renderMermaid(
+    source: string,
+    theme: DiagramTheme,
+): Promise<string> {
     if (!source.trim() || source.length > MAX_DIAGRAM_LENGTH) {
-        return Promise.reject(new Error('Diagram source is empty or too long.'));
+        return Promise.reject(
+            new Error('Diagram source is empty or too long.'),
+        );
     }
 
     const task = renderQueue.then(async (): Promise<string> => {
@@ -64,7 +69,10 @@ export function renderMermaid(source: string, theme: DiagramTheme): Promise<stri
             throw new Error('Invalid Mermaid syntax.');
         }
 
-        const rendered = await mermaid.render(`devnull-diagram-${++nextId}`, source);
+        const rendered = await mermaid.render(
+            `devnull-diagram-${++nextId}`,
+            source,
+        );
 
         return rendered.svg;
     });
