@@ -146,5 +146,13 @@ jobs:
         if: steps.build-cache.outputs.cache-hit != 'true'
         run: bun run build
 
-      - name: Tests
-        run: composer test:unit
+      - name: Targeted Remotes PostgreSQL regression (fork-only harness)
+        run: |
+          GITHUB_REPOSITORY=dev-null-sh/dev-null.sh php -d memory_limit=-1 vendor/bin/pest \
+            tests/Feature/RemotesCursorConcurrencyTest.php \
+            tests/Feature/Controllers/ConversationMessageControllerTest.php \
+            tests/Feature/Controllers/OrgMessageControllerTest.php \
+            tests/Feature/Controllers/OrgMemberControllerTest.php \
+            tests/Feature/Controllers/OrgControllerTest.php \
+            --parallel
+          bun run test:unit
