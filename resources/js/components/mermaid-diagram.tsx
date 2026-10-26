@@ -147,7 +147,8 @@ export function MermaidDiagram({ source }: { source: string }) {
                         }
                         aria-label={showSource ? 'Show diagram' : 'Show source'}
                         aria-pressed={showSource}
-                        className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                        disabled={error || tooLarge}
+                        className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
                     >
                         {showSource ? (
                             <Image className="size-3.5" aria-hidden />
