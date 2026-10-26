@@ -1,4 +1,12 @@
-import { Check, Code2, Copy, Image, Minus, Plus, RotateCcw } from 'lucide-react';
+import {
+    Check,
+    Code2,
+    Copy,
+    Image,
+    Minus,
+    Plus,
+    RotateCcw,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { MAX_DIAGRAM_LENGTH, renderMermaid } from '@/lib/mermaid-renderer';
@@ -9,11 +17,19 @@ function useDiagramTheme(): DiagramTheme {
     const [theme, setTheme] = useState<DiagramTheme>('light');
 
     useEffect(() => {
-        const update = () => setTheme(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+        const update = () =>
+            setTheme(
+                document.documentElement.classList.contains('dark')
+                    ? 'dark'
+                    : 'light',
+            );
         update();
 
         const observer = new MutationObserver(update);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['class'],
+        });
 
         return () => observer.disconnect();
     }, []);
@@ -126,12 +142,18 @@ export function MermaidDiagram({ source }: { source: string }) {
                 <div className="flex shrink-0 items-center gap-0.5">
                     <button
                         type="button"
-                        onClick={() => setView(showSource ? 'diagram' : 'source')}
+                        onClick={() =>
+                            setView(showSource ? 'diagram' : 'source')
+                        }
                         aria-label={showSource ? 'Show diagram' : 'Show source'}
                         aria-pressed={showSource}
                         className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
                     >
-                        {showSource ? <Image className="size-3.5" aria-hidden /> : <Code2 className="size-3.5" aria-hidden />}
+                        {showSource ? (
+                            <Image className="size-3.5" aria-hidden />
+                        ) : (
+                            <Code2 className="size-3.5" aria-hidden />
+                        )}
                     </button>
                     <button
                         type="button"
@@ -139,7 +161,11 @@ export function MermaidDiagram({ source }: { source: string }) {
                         aria-label="Copy Mermaid source"
                         className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
                     >
-                        {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
+                        {copied ? (
+                            <Check className="size-3.5" aria-hidden />
+                        ) : (
+                            <Copy className="size-3.5" aria-hidden />
+                        )}
                     </button>
                 </div>
             </div>
@@ -147,7 +173,10 @@ export function MermaidDiagram({ source }: { source: string }) {
             {showSource ? (
                 <>
                     {(error || tooLarge) && (
-                        <p role="status" className="border-b px-3 py-2 text-xs text-muted-foreground">
+                        <p
+                            role="status"
+                            className="border-b px-3 py-2 text-xs text-muted-foreground"
+                        >
                             {status}
                         </p>
                     )}
@@ -156,7 +185,10 @@ export function MermaidDiagram({ source }: { source: string }) {
                     </pre>
                 </>
             ) : imageUrl === null ? (
-                <div role="status" className="flex min-h-40 items-center justify-center px-3 py-6 text-xs text-muted-foreground">
+                <div
+                    role="status"
+                    className="flex min-h-40 items-center justify-center px-3 py-6 text-xs text-muted-foreground"
+                >
                     {status}
                 </div>
             ) : (
@@ -175,17 +207,23 @@ export function MermaidDiagram({ source }: { source: string }) {
                             type="button"
                             aria-label="Zoom out"
                             disabled={zoom <= 50}
-                            onClick={() => setZoom((value) => Math.max(50, value - 25))}
+                            onClick={() =>
+                                setZoom((value) => Math.max(50, value - 25))
+                            }
                             className="grid size-6 place-items-center rounded-md hover:bg-muted disabled:opacity-40"
                         >
                             <Minus className="size-3" aria-hidden />
                         </button>
-                        <span className="w-10 text-center tabular-nums">{zoom}%</span>
+                        <span className="w-10 text-center tabular-nums">
+                            {zoom}%
+                        </span>
                         <button
                             type="button"
                             aria-label="Zoom in"
                             disabled={zoom >= 200}
-                            onClick={() => setZoom((value) => Math.min(200, value + 25))}
+                            onClick={() =>
+                                setZoom((value) => Math.min(200, value + 25))
+                            }
                             className="grid size-6 place-items-center rounded-md hover:bg-muted disabled:opacity-40"
                         >
                             <Plus className="size-3" aria-hidden />
