@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\CreateMessage;
+use Illuminate\Support\Sleep;
 use App\Models\Conversation;
 use App\Models\User;
 use Illuminate\Contracts\Console\Kernel;
@@ -28,11 +29,9 @@ if ($mode === 'hold') {
         $deadline = microtime(true) + 30;
 
         while (! is_file($release)) {
-            if (microtime(true) >= $deadline) {
-                throw new RuntimeException('Timed out waiting to release the first insert.');
-            }
+            throw_if(microtime(true) >= $deadline, RuntimeException::class, 'Timed out waiting to release the first insert.');
 
-            usleep(20_000);
+            Sleep::usleep(20_000);
         }
     });
 }
@@ -50,7 +49,7 @@ try {
     );
 
     file_put_contents($finished, (string) $message->id);
-} catch (Throwable $error) {
-    fwrite(STDERR, $error->__toString().PHP_EOL);
+} catch (Throwable $throwable) {
+    fwrite(STDERR, $throwable->__toString().PHP_EOL);
     exit(1);
 }
