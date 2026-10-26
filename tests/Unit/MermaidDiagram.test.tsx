@@ -5,6 +5,7 @@ import type { ComponentProps, ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { test } from 'vite-plus/test';
 import { CommitBody } from '../../resources/js/components/commit-body';
+import { MermaidDiagram } from '../../resources/js/components/mermaid-diagram';
 import { bodySegments } from '../../resources/js/lib/code';
 
 function renderPage(content: ReactElement): string {
@@ -71,4 +72,16 @@ test('uses the normal code block for other languages and unrecognized Mermaid so
 
     assert.ok(!markup.includes('data-test="mermaid-diagram"'));
     assert.ok(markup.includes('source was not provided'));
+});
+
+
+test('shows long diagrams as escaped copyable source, without a dead view switch', () => {
+    const oversized = '<svg onload=alert(1)>'.repeat(300);
+    const markup = renderPage(<MermaidDiagram source={oversized} />);
+
+    assert.ok(markup.includes('6,000-character limit'));
+    assert.match(markup, /aria-label="Show diagram"[^>]*disabled=""/);
+    assert.ok(markup.includes('aria-label="Copy Mermaid source"'));
+    assert.ok(markup.includes('&lt;svg onload=alert(1)&gt;'));
+    assert.ok(!markup.includes('<svg onload'));
 });
