@@ -4,7 +4,19 @@ import { chromium } from 'playwright';
 
 await mkdir('evidence/mermaid', { recursive: true });
 
-const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+const { execFileSync } = await import('node:child_process');
+let chromePath;
+try {
+    chromePath = execFileSync('which', ['google-chrome'], { encoding: 'utf8' }).trim();
+} catch {
+    chromePath = undefined;
+}
+
+const browser = await chromium.launch({
+    ...(chromePath ? { executablePath: chromePath } : {}),
+    headless: true,
+    args: ['--no-sandbox'],
+});
 
 async function capture(mode, width, height) {
     const context = await browser.newContext({

@@ -53,8 +53,13 @@ jobs:
         run: |
           php artisan migrate:fresh --force
           php tests/Support/mermaid-visual-fixture.php
-      - name: Install Playwright browser
-        run: bunx playwright install chromium --with-deps
+      - name: Use preinstalled Chrome, install Playwright Chromium only when absent
+        run: |
+          if command -v google-chrome >/dev/null 2>&1; then
+            google-chrome --version
+          else
+            bunx playwright install chromium
+          fi
       - name: Start site and capture browser screenshots
         run: |
           nohup php artisan serve --host=127.0.0.1 --port=8000 >/tmp/devnull-visual-server.log 2>&1 &
