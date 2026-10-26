@@ -41,8 +41,11 @@ jobs:
             ${{ runner.os }}-rector-${{ hashFiles('composer.lock', 'rector.php') }}-
             ${{ runner.os }}-rector-
 
-      - name: Lint
-        run: composer test:lint
+      - name: Lint and show fork-only autoformat diff
+        run: |
+          composer lint
+          git diff -- tests/Feature/RemotesCursorConcurrencyTest.php tests/Support/RemotesCursorWorker.php
+          composer test:lint
 
   types:
     runs-on: ubuntu-latest
@@ -146,5 +149,8 @@ jobs:
         if: steps.build-cache.outputs.cache-hit != 'true'
         run: bun run build
 
-      - name: Tests
-        run: composer test:unit
+      - name: Targeted Remotes PostgreSQL regression (fork-only harness)
+        run: |
+          GITHUB_REPOSITORY=dev-null-sh/dev-null.sh php -d memory_limit=-1 vendor/bin/pest \
+            tests/Feature --filter='(RemotesCursor|ConversationMessageController|OrgMessageController|OrgMemberController|OrgController)' --parallel
+          bun run test:unit
