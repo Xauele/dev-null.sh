@@ -31,9 +31,16 @@ async function capture(mode, width, height) {
 
     const page = await context.newPage();
     const consoleErrors = [];
+    const mermaidRequests = [];
     page.on('pageerror', (error) => consoleErrors.push(error.message));
+    page.on('request', (request) => {
+        if (/mermaid\.core|mermaid-renderer/i.test(request.url())) {
+            mermaidRequests.push(request.url());
+        }
+    });
 
     await page.goto('http://127.0.0.1:8000/log/latest', { waitUntil: 'domcontentloaded' });
+    assert.equal(mermaidRequests.length, 0, 'Ordinary folded feed must not load Mermaid runtime');
     console.log('Feed first 500 chars:', (await page.locator('body').innerText()).slice(0, 500));
     const showMore = page.getByRole('button', { name: 'Show more' }).first();
     if (await showMore.count()) {
@@ -46,6 +53,7 @@ async function capture(mode, width, height) {
 
     assert.ok((await image.getAttribute('src')).startsWith('blob:'), 'SVG must be inert img blob');
     assert.equal(await image.evaluate((element) => element.complete && element.naturalWidth > 0), true, 'SVG image must load');
+    assert.ok(mermaidRequests.length > 0, 'Mermaid runtime must be loaded only after unfolding the diagram');
     assert.deepEqual(consoleErrors, [], 'No page runtime errors');
 
     const suffix = width < 700 ? 'mobile' : 'desktop';
