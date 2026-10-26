@@ -1,0 +1,75 @@
+name: Capture genuine Mermaid visuals on fork
+
+on:
+  push:
+    branches: [ci/mermaid-visual-20261026]
+    paths-ignore:
+      - 'evidence/mermaid/**'
+
+permissions:
+  contents: write
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: testing
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U root -d testing"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: testing
+      DB_USERNAME: root
+      DB_PASSWORD: password
+      APP_ENV: local
+      APP_URL: http://127.0.0.1:8000
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      CACHE_STORE: array
+      GITHUB_REPOSITORY: dev-null-sh/dev-null.sh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+      - name: Enable database extensions
+        run: |
+          docker exec "${{ job.services.postgres.id }}" psql -U root -d testing -v ON_ERROR_STOP=1 \
+            -c 'CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;'
+      - uses: ./.github/actions/setup
+      - name: Build real site assets
+        run: bun run build
+      - name: Migrate and seed genuine application records
+        run: |
+          php artisan migrate:fresh --force
+          php tests/Support/mermaid-visual-fixture.php
+      - name: Install Playwright browser
+        run: bunx playwright install chromium --with-deps
+      - name: Start site and capture browser screenshots
+        run: |
+          nohup php artisan serve --host=127.0.0.1 --port=8000 >/tmp/devnull-visual-server.log 2>&1 &
+          for n in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:8000/log/latest >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          node tests/Support/mermaid-visual-proof.mjs
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/devnull-visual-server.log || true
+      - name: Commit actual application screenshots to fork proof branch
+        run: |
+          git add evidence/mermaid/
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'test: record live Mermaid screenshots from Laravel'
+          git push origin HEAD:ci/mermaid-visual-20261026
