@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\CreateConversation;
 use App\Models\User;
 use App\Queries\ConversationThreadQuery;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\DB;
 
 it('publishes concurrent Remotes messages in cursor order', function (): void {
@@ -39,7 +40,7 @@ it('publishes concurrent Remotes messages in cursor order', function (): void {
 
     $spawn = function (string $sender, string $mode, string $finished, string $tag) use ($database, $conversation, $ready, $release, &$processes): void {
         $environment = [
-            ...(getenv() ?: []),
+            ...getenv(),
             'APP_ENV' => 'testing',
             'APP_KEY' => (string) config('app.key'),
             'DB_CONNECTION' => 'pgsql',
@@ -61,9 +62,7 @@ it('publishes concurrent Remotes messages in cursor order', function (): void {
             $environment,
         );
 
-        if (! is_resource($process)) {
-            throw new RuntimeException('Could not start the Remotes concurrency worker.');
-        }
+        throw_unless(is_resource($process), RuntimeException::class, 'Could not start the Remotes concurrency worker.');
 
         fclose($pipes[0]);
         $processes[] = [$process, $pipes];
@@ -73,11 +72,9 @@ it('publishes concurrent Remotes messages in cursor order', function (): void {
         $deadline = microtime(true) + 20;
 
         while (! $condition()) {
-            if (microtime(true) >= $deadline) {
-                throw new RuntimeException('Timed out: '.$description);
-            }
+            throw_if(microtime(true) >= $deadline, RuntimeException::class, 'Timed out: '.$description);
 
-            usleep(20_000);
+            time_nanosleep(0, 20_000_000);
         }
     };
 
@@ -129,7 +126,7 @@ it('publishes concurrent Remotes messages in cursor order', function (): void {
             $deadline = microtime(true) + 5;
 
             while (proc_get_status($process)['running'] && microtime(true) < $deadline) {
-                usleep(20_000);
+                time_nanosleep(0, 20_000_000);
             }
 
             if (proc_get_status($process)['running']) {
@@ -147,7 +144,7 @@ it('publishes concurrent Remotes messages in cursor order', function (): void {
         DB::purge('cursor_probe');
 
         foreach (glob($directory.'/*') ?: [] as $file) {
-            unlink($file);
+            File::delete($file);
         }
 
         rmdir($directory);
