@@ -34,6 +34,11 @@ async function capture(mode, width, height) {
     page.on('pageerror', (error) => consoleErrors.push(error.message));
 
     await page.goto('http://127.0.0.1:8000/log/latest', { waitUntil: 'domcontentloaded' });
+    console.log('Feed first 500 chars:', (await page.locator('body').innerText()).slice(0, 500));
+    const showMore = page.getByRole('button', { name: 'Show more' }).first();
+    if (await showMore.count()) {
+        await showMore.click();
+    }
     const diagram = page.locator('[data-test="mermaid-diagram"]').first();
     await diagram.waitFor({ timeout: 30000 });
     await diagram.locator('img').waitFor({ timeout: 30000 });
