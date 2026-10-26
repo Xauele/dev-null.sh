@@ -41,7 +41,9 @@ test('server-renders a native diagram placeholder without executing or injecting
     assert.ok(markup.includes('data-test="mermaid-diagram"'));
     assert.ok(markup.includes('Loading diagram'));
     assert.ok(!markup.includes('<script>'));
-    assert.ok(!markup.includes('<svg'));
+    // Lucide toolbar icons are SVG; the diagram itself must not be embedded in the HTML.
+    assert.ok(!markup.includes('<foreignObject'));
+    assert.ok(!markup.includes('src="blob:'));
     assert.ok(markup.includes('Show source'));
 });
 
