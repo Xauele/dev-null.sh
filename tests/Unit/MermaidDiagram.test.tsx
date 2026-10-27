@@ -96,6 +96,7 @@ test('uses the real dev-null theme colors rather than Mermaid defaults', () => {
     assert.equal(dark.secondaryBorderColor, '#51cf66');
     assert.equal(dark.tertiaryBorderColor, '#da77f2');
     assert.equal(dark.darkMode, true);
+    assert.equal(dark.fontFamily, 'system-ui, sans-serif');
     assert.equal(light.background, '#ffffff');
     assert.equal(light.primaryBorderColor, '#3b6fe0');
     assert.equal(light.darkMode, false);
