@@ -106,7 +106,11 @@ async function capture(mode, width, height) {
     await blocked.scrollIntoViewIfNeeded();
     await blocked.locator('pre').waitFor({ timeout: 30000 });
     assert.match((await blocked.locator('pre').textContent()) ?? '', /img:/);
-    assert.deepEqual(externalImageRequests, [], 'Untrusted image node must not cause an external request');
+    const escapedKey = page.locator('[data-test="mermaid-diagram"]').nth(2);
+    await escapedKey.scrollIntoViewIfNeeded();
+    await escapedKey.locator('pre').waitFor({ timeout: 30000 });
+    assert.match((await escapedKey.locator('pre').textContent()) ?? '', /i\\u006dg/);
+    assert.deepEqual(externalImageRequests, [], 'Untrusted image nodes, including escaped keys, must not request remote images');
     console.log(`${suffix} ${mode}: SVG image, source fallback, no image egress, zoom, and screenshots PASS`);
     await context.close();
 }

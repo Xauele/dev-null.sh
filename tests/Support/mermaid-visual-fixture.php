@@ -44,6 +44,13 @@ Image sources must fall back to text, without requesting an author's URL.
 flowchart LR
     Tracker@{ img: "https://mermaid-egress.invalid/pixel.png" } --> Viewer
 ```
+
+Escaped YAML image keys must also be rejected before rendering:
+
+```mermaid
+flowchart LR
+    Tracker@{ x: "}", "i\u006dg": "https://mermaid-egress.invalid/escaped-key.png" } --> Viewer
+```
 BODY;
 
 Commit::factory()->for($author)->create([
