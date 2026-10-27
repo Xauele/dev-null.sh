@@ -21,7 +21,15 @@ const palettes = {
         note: '#382d1c',
         noteBorder: '#caa34a',
         noteText: '#f2e6ca',
-        pie: ['#7aa2f7', '#51cf66', '#da77f2', '#ff8a4c', '#3bc9db', '#f06595', '#fcc419'],
+        pie: [
+            '#7aa2f7',
+            '#51cf66',
+            '#da77f2',
+            '#ff8a4c',
+            '#3bc9db',
+            '#f06595',
+            '#fcc419',
+        ],
     },
     light: {
         canvas: '#ffffff',
@@ -38,7 +46,15 @@ const palettes = {
         note: '#fff4dc',
         noteBorder: '#b7791f',
         noteText: '#513c1d',
-        pie: ['#3b6fe0', '#2f9e44', '#9c36b5', '#d9480f', '#0c8599', '#c2255c', '#b7791f'],
+        pie: [
+            '#3b6fe0',
+            '#2f9e44',
+            '#9c36b5',
+            '#d9480f',
+            '#0c8599',
+            '#c2255c',
+            '#b7791f',
+        ],
     },
 } as const;
 
