@@ -105,7 +105,7 @@ export function MermaidDiagram({ source }: { source: string }) {
                 // their labels to a few pixels. Keep vertical charts fitted to the feed.
                 const viewBox = svg.match(/viewBox="([^"]+)"/)?.[1]
                     ?.trim()
-                    .split(/[\\s,]+/)
+                    .split(/[\s,]+/)
                     .map(Number);
                 const width = viewBox?.[2] ?? 0;
                 const height = viewBox?.[3] ?? 0;
@@ -215,7 +215,7 @@ export function MermaidDiagram({ source }: { source: string }) {
                         role="region"
                         aria-label="Diagram viewport"
                         tabIndex={0}
-                        className="max-h-[440px] min-h-32 overflow-auto overscroll-contain bg-card px-3 py-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring sm:px-4 sm:py-5"
+                        className="max-h-[440px] min-h-32 overflow-auto overscroll-contain bg-card px-3 py-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:px-4 sm:py-5"
                         style={{
                             backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--border) 55%, transparent) 0.8px, transparent 1px)',
                             backgroundSize: '20px 20px',
