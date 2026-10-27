@@ -29,6 +29,7 @@ flowchart LR
     B -->|red| D["Fix and retry"]
     D --> B
     C --> E["Production"]
+    E --> H{{Release check}}
     classDef success fill:#51cf66,fill-opacity:0.14,stroke:#51cf66,stroke-width:2px
     classDef retry fill:#f06595,fill-opacity:0.14,stroke:#f06595,stroke-width:2px
     class C,E success
@@ -36,6 +37,13 @@ flowchart LR
 ```
 
 The source stays copyable and works in commit previews, too.
+
+Image sources must fall back to text, without requesting an author's URL.
+
+```mermaid
+flowchart LR
+    Tracker@{ img: "https://mermaid-egress.invalid/pixel.png" } --> Viewer
+```
 BODY;
 
 Commit::factory()->for($author)->create([

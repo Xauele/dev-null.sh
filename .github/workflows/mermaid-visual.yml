@@ -47,6 +47,10 @@ jobs:
           docker exec "${{ job.services.postgres.id }}" psql -U root -d testing -v ON_ERROR_STOP=1 \
             -c 'CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;'
       - uses: ./.github/actions/setup
+      - name: Run maintained JS/TS unit and type checks
+        run: |
+          bun run test:types
+          bun run test:unit
       - name: Build real site assets
         run: bun run build
       - name: Migrate and seed genuine application records

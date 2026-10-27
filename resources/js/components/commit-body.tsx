@@ -100,7 +100,12 @@ export function BodySegments({
                             segment.language?.toLowerCase() === 'mermaid' &&
                             segment.source !== undefined
                         ) {
-                            return <MermaidDiagram key={index} source={segment.source} />;
+                            return (
+                                <MermaidDiagram
+                                    key={index}
+                                    source={segment.source}
+                                />
+                            );
                         }
 
                         return (

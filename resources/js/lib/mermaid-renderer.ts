@@ -2,10 +2,15 @@
  * Mermaid stays out of the normal feed bundle. The renderer is loaded only for a diagram
  * approaching the viewport, and its SVG is displayed as an inert image, never as DOM HTML.
  */
-import { mermaidTheme, mermaidThemeCSS } from '@/lib/mermaid-theme';
+import { mermaidTheme } from '@/lib/mermaid-theme';
 import type { DiagramTheme } from '@/lib/mermaid-theme';
 
 export const MAX_DIAGRAM_LENGTH = 6000;
+
+// Source is untrusted. Mermaid can load images while building its temporary DOM,
+// before the final SVG is isolated in an <img>. Fall back to source for media.
+const EMBEDDED_MEDIA = /\bimg['"]?\s*:|<\s*(?:img|image|picture|source|svg)\b|!\[[^\]\r\n]*\]\s*\(|\burl\s*\(/i;
+
 type Mermaid = (typeof import('mermaid'))['default'];
 
 let engine: Promise<Mermaid> | null = null;
@@ -32,18 +37,22 @@ export function renderMermaid(
         );
     }
 
+    if (EMBEDDED_MEDIA.test(source)) {
+        return Promise.reject(new Error('Embedded images are not supported.'));
+    }
+
     const task = renderQueue.then(async (): Promise<string> => {
         const mermaid = await loadMermaid();
 
         mermaid.initialize({
             startOnLoad: false,
+            suppressErrorRendering: true,
             securityLevel: 'strict',
             maxTextSize: MAX_DIAGRAM_LENGTH,
             maxEdges: 80,
             theme: 'base',
             flowchart: { htmlLabels: false },
             themeVariables: mermaidTheme(theme),
-            themeCSS: mermaidThemeCSS(theme),
         });
 
         if (!(await mermaid.parse(source, { suppressErrors: true }))) {

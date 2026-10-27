@@ -32,10 +32,14 @@ async function capture(mode, width, height) {
     const page = await context.newPage();
     const consoleErrors = [];
     const mermaidRequests = [];
+    const externalImageRequests = [];
     page.on('pageerror', (error) => consoleErrors.push(error.message));
     page.on('request', (request) => {
         if (/mermaid\.core|mermaid-renderer/i.test(request.url())) {
             mermaidRequests.push(request.url());
+        }
+        if (request.url().includes('mermaid-egress.invalid')) {
+            externalImageRequests.push(request.url());
         }
     });
 
@@ -66,7 +70,9 @@ async function capture(mode, width, height) {
     );
     assert.match(svg, /#(?:7aa2f7|3b6fe0)/i, 'Diagram should use the dev-null primary blue');
     assert.match(svg, /font-family:system-ui/i, 'Diagram must use an image-safe font to prevent clipped labels');
-    assert.match(svg, /(?:#fcc419|#b7791f|rgb\(252,\s*196,\s*25\)|rgb\(183,\s*121,\s*31\))/i, 'Decision node should have a lane-amber stroke');
+    assert.doesNotMatch(svg, /\.node\.default polygon/, 'No broad polygon tint for diamonds and hexagons');
+    assert.match(svg, /Release check/, 'Graph must include the hexagon');
+    assert.ok((svg.match(/<polygon\b/gi) ?? []).length >= 2, 'Both diamond and hexagon must be drawn');
 
     const viewport = diagram.getByRole('region', { name: 'Diagram viewport' });
     if (width < 700) {
@@ -96,7 +102,12 @@ async function capture(mode, width, height) {
     await diagram.getByRole('button', { name: 'Show diagram' }).click();
     await diagram.getByRole('button', { name: 'Zoom in' }).click();
     assert.equal(await diagram.locator('span.tabular-nums').textContent(), '125%');
-    console.log(`${suffix} ${mode}: SVG image, source, safe DOM, zoom, and screenshots PASS`);
+    const blocked = page.locator('[data-test="mermaid-diagram"]').nth(1);
+    await blocked.scrollIntoViewIfNeeded();
+    await blocked.locator('pre').waitFor({ timeout: 30000 });
+    assert.match((await blocked.locator('pre').textContent()) ?? '', /img:/);
+    assert.deepEqual(externalImageRequests, [], 'Untrusted image node must not cause an external request');
+    console.log(`${suffix} ${mode}: SVG image, source fallback, no image egress, zoom, and screenshots PASS`);
     await context.close();
 }
 
@@ -104,6 +115,7 @@ try {
     await capture('dark', 1440, 900);
     await capture('light', 1440, 900);
     await capture('dark', 390, 844);
+    await capture('light', 390, 844);
     console.log('All live-rendered Mermaid visual checks passed');
 } finally {
     await browser.close();
