@@ -65,6 +65,7 @@ async function capture(mode, width, height) {
         (await fetch(element.src)).text(),
     );
     assert.match(svg, /#(?:7aa2f7|3b6fe0)/i, 'Diagram should use the dev-null primary blue');
+    assert.match(svg, /font-family:system-ui/i, 'Diagram must use an image-safe font to prevent clipped labels');
     assert.match(svg, /(?:#fcc419|#b7791f|rgb\(252,\s*196,\s*25\)|rgb\(183,\s*121,\s*31\))/i, 'Decision node should have a lane-amber stroke');
 
     const viewport = diagram.getByRole('region', { name: 'Diagram viewport' });
