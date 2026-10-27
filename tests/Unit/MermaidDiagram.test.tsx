@@ -7,6 +7,7 @@ import { test } from 'vite-plus/test';
 import { CommitBody } from '../../resources/js/components/commit-body';
 import { MermaidDiagram } from '../../resources/js/components/mermaid-diagram';
 import { bodySegments } from '../../resources/js/lib/code';
+import { mermaidTheme, mermaidThemeCSS } from '../../resources/js/lib/mermaid-theme';
 
 function renderPage(content: ReactElement): string {
     return renderToStaticMarkup(
@@ -84,4 +85,40 @@ test('shows long diagrams as escaped copyable source, without a dead view switch
     assert.ok(markup.includes('aria-label="Copy Mermaid source"'));
     assert.ok(markup.includes('&lt;svg onload=alert(1)&gt;'));
     assert.ok(!markup.includes('<svg onload'));
+});
+
+test('uses the real dev-null theme colors rather than Mermaid defaults', () => {
+    const dark = mermaidTheme('dark');
+    const light = mermaidTheme('light');
+
+    assert.equal(dark.background, '#18181a');
+    assert.equal(dark.primaryBorderColor, '#7aa2f7');
+    assert.equal(dark.secondaryBorderColor, '#51cf66');
+    assert.equal(dark.tertiaryBorderColor, '#da77f2');
+    assert.equal(dark.darkMode, true);
+    assert.equal(light.background, '#ffffff');
+    assert.equal(light.primaryBorderColor, '#3b6fe0');
+    assert.equal(light.darkMode, false);
+
+    for (const palette of [dark, light]) {
+        assert.notEqual(palette.primaryColor, palette.secondaryColor);
+        assert.notEqual(palette.secondaryColor, palette.tertiaryColor);
+        assert.equal(new Set([
+            palette.pie1,
+            palette.pie2,
+            palette.pie3,
+            palette.pie4,
+            palette.pie5,
+        ]).size, 5);
+    }
+});
+
+test('tints only unstyled decision diamonds and keeps custom Mermaid classes intact', () => {
+    const darkCSS = mermaidThemeCSS('dark');
+    const lightCSS = mermaidThemeCSS('light');
+
+    assert.ok(darkCSS.includes('.node.default polygon'));
+    assert.ok(darkCSS.includes('#fcc419'));
+    assert.ok(lightCSS.includes('#b7791f'));
+    assert.ok(!darkCSS.includes('.node rect'));
 });
