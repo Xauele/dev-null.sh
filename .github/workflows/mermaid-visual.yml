@@ -47,6 +47,8 @@ jobs:
           docker exec "${{ job.services.postgres.id }}" psql -U root -d testing -v ON_ERROR_STOP=1 \
             -c 'CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;'
       - uses: ./.github/actions/setup
+      - name: Generate Wayfinder Types
+        run: php artisan wayfinder:generate --with-form
       - name: Run maintained JS/TS unit and type checks
         run: |
           bun run test:types
