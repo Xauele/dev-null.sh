@@ -79,6 +79,10 @@ jobs:
       - name: Print server log on failure
         if: failure()
         run: cat /tmp/devnull-visual-server.log || true
+      - name: Check maintained frontend lint and formatting
+        run: bun run test:lint
+      - name: Run PHP Mermaid source parser regressions
+        run: php vendor/bin/pest tests/Unit/Services/CodeSpansTest.php
       - name: Commit actual application screenshots to fork proof branch
         run: |
           git add evidence/mermaid/
