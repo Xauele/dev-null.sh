@@ -101,4 +101,3 @@ export function mermaidTheme(theme: DiagramTheme) {
         pie7: palette.pie[6],
     };
 }
-
