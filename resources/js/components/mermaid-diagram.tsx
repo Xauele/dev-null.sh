@@ -103,7 +103,8 @@ export function MermaidDiagram({ source }: { source: string }) {
 
                 // Horizontal charts must stay readable on phones instead of shrinking
                 // their labels to a few pixels. Keep vertical charts fitted to the feed.
-                const viewBox = svg.match(/viewBox="([^"]+)"/)?.[1]
+                const viewBox = svg
+                    .match(/viewBox="([^"]+)"/)?.[1]
                     ?.trim()
                     .split(/[\s,]+/)
                     .map(Number);
@@ -151,7 +152,10 @@ export function MermaidDiagram({ source }: { source: string }) {
         >
             <div className="flex h-8 items-center justify-between gap-2 border-b pr-1 pl-3">
                 <span className="flex min-w-0 items-center gap-1.5 truncate font-mono text-[11px] text-muted-foreground select-none">
-                    <GitBranch className="size-3.5 shrink-0 text-primary" aria-hidden />
+                    <GitBranch
+                        className="size-3.5 shrink-0 text-primary"
+                        aria-hidden
+                    />
                     mermaid
                 </span>
                 <div className="flex shrink-0 items-center gap-0.5">
@@ -217,7 +221,8 @@ export function MermaidDiagram({ source }: { source: string }) {
                         tabIndex={0}
                         className="max-h-[440px] min-h-32 overflow-auto overscroll-contain bg-card px-3 py-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:px-4 sm:py-5"
                         style={{
-                            backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--border) 55%, transparent) 0.8px, transparent 1px)',
+                            backgroundImage:
+                                'radial-gradient(circle, color-mix(in srgb, var(--border) 55%, transparent) 0.8px, transparent 1px)',
                             backgroundSize: '20px 20px',
                         }}
                     >
@@ -228,14 +233,18 @@ export function MermaidDiagram({ source }: { source: string }) {
                             className="mx-auto block h-auto max-w-none"
                             style={{
                                 width: `${zoom}%`,
-                                minWidth: isWide && isSmallScreen
-                                    ? `${Math.round(600 * zoom / 100)}px`
-                                    : undefined,
+                                minWidth:
+                                    isWide && isSmallScreen
+                                        ? `${Math.round((600 * zoom) / 100)}px`
+                                        : undefined,
                             }}
                         />
                     </div>
-                    <div className="flex h-8 items-center justify-between gap-0.5 border-t px-1 font-mono text-[11px] text-muted-foreground">
-                        <span className="flex items-center gap-1 pl-2 text-[10px] sm:hidden" aria-hidden>
+                    <div className="flex h-8 items-center gap-0.5 border-t px-1 font-mono text-[11px] text-muted-foreground">
+                        <span
+                            className="flex items-center gap-1 pl-2 text-[10px] sm:hidden"
+                            aria-hidden
+                        >
                             {isWide && isSmallScreen && (
                                 <>
                                     <ArrowLeftRight className="size-3" />
@@ -243,40 +252,42 @@ export function MermaidDiagram({ source }: { source: string }) {
                                 </>
                             )}
                         </span>
-                        <div className="flex items-center gap-0.5">
-                        <button
-                            type="button"
-                            aria-label="Zoom out"
-                            disabled={zoom <= 50}
-                            onClick={() =>
-                                setZoom((value) => Math.max(50, value - 25))
-                            }
-                            className="grid size-6 place-items-center rounded-md hover:bg-muted disabled:opacity-40"
-                        >
-                            <Minus className="size-3" aria-hidden />
-                        </button>
-                        <span className="w-10 text-center tabular-nums">
-                            {zoom}%
-                        </span>
-                        <button
-                            type="button"
-                            aria-label="Zoom in"
-                            disabled={zoom >= 200}
-                            onClick={() =>
-                                setZoom((value) => Math.min(200, value + 25))
-                            }
-                            className="grid size-6 place-items-center rounded-md hover:bg-muted disabled:opacity-40"
-                        >
-                            <Plus className="size-3" aria-hidden />
-                        </button>
-                        <button
-                            type="button"
-                            aria-label="Reset zoom"
-                            onClick={() => setZoom(100)}
-                            className="grid size-6 place-items-center rounded-md hover:bg-muted"
-                        >
-                            <RotateCcw className="size-3" aria-hidden />
-                        </button>
+                        <div className="ml-auto flex items-center gap-0.5">
+                            <button
+                                type="button"
+                                aria-label="Zoom out"
+                                disabled={zoom <= 50}
+                                onClick={() =>
+                                    setZoom((value) => Math.max(50, value - 25))
+                                }
+                                className="grid size-6 place-items-center rounded-md hover:bg-muted disabled:opacity-40"
+                            >
+                                <Minus className="size-3" aria-hidden />
+                            </button>
+                            <span className="w-10 text-center tabular-nums">
+                                {zoom}%
+                            </span>
+                            <button
+                                type="button"
+                                aria-label="Zoom in"
+                                disabled={zoom >= 200}
+                                onClick={() =>
+                                    setZoom((value) =>
+                                        Math.min(200, value + 25),
+                                    )
+                                }
+                                className="grid size-6 place-items-center rounded-md hover:bg-muted disabled:opacity-40"
+                            >
+                                <Plus className="size-3" aria-hidden />
+                            </button>
+                            <button
+                                type="button"
+                                aria-label="Reset zoom"
+                                onClick={() => setZoom(100)}
+                                className="grid size-6 place-items-center rounded-md hover:bg-muted"
+                            >
+                                <RotateCcw className="size-3" aria-hidden />
+                            </button>
                         </div>
                     </div>
                 </>
