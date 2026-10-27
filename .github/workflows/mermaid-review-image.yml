@@ -12,11 +12,17 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Encode PNGs to auditable review copies
+      - name: Export latest live-rendered screenshots
         run: |
-          for name in desktop-dark desktop-light mobile-dark; do
+          git fetch --no-tags origin ci/mermaid-visual-20261026
+          git restore --source=FETCH_HEAD -- evidence/mermaid/desktop-dark.png evidence/mermaid/desktop-light.png evidence/mermaid/mobile-dark.png evidence/mermaid/mobile-dark-pan.png
+          for name in desktop-dark desktop-light mobile-dark mobile-dark-pan; do
             base64 -w0 "evidence/mermaid/$name.png" > "evidence/mermaid/$name.png.b64"
           done
-          git add evidence/mermaid/*.b64
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'test: expose screenshots for visual inspection'
+          git add evidence/mermaid/
+          if git diff --cached --quiet; then
+            echo 'Screenshots already current'
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'test: refresh genuine Mermaid screenshots for review'
           git push origin HEAD:ci/mermaid-review-image-20261027
