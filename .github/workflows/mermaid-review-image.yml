@@ -1,0 +1,22 @@
+name: Prepare UI screenshots for visual review
+on:
+  push:
+    branches: [ci/mermaid-review-image-20261027]
+    paths-ignore:
+      - 'evidence/mermaid/*.b64'
+permissions:
+  contents: write
+jobs:
+  encode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Encode PNGs to auditable review copies
+        run: |
+          for name in desktop-dark desktop-light mobile-dark; do
+            base64 -w0 "evidence/mermaid/$name.png" > "evidence/mermaid/$name.png.b64"
+          done
+          git add evidence/mermaid/*.b64
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'test: expose screenshots for visual inspection'
+          git push origin HEAD:ci/mermaid-review-image-20261027
