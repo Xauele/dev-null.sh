@@ -131,6 +131,8 @@ test('rejects image and remote CSS sources before Mermaid parses them', async ()
     const imageSources = [
         'flowchart LR\nA@{ img: "https://example.com/pixel.png" } --> B',
         'flowchart LR\nA@{\n img : "//example.com/pixel.png"\n}',
+        'flowchart LR\nA@{ "i\\u006dg": "https://example.com/pixel.png" }',
+        'flowchart LR\nA@{ x: "}", "i\\u006dg": "https://example.com/pixel.png" }',
         'flowchart LR\nA["<img src=https://example.com/pixel.png>"]',
         'flowchart LR\nA["![pixel](https://example.com/pixel.png)"]',
         'flowchart LR\nclassDef danger fill:url(https://example.com/pixel.png)',

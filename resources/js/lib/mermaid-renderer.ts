@@ -9,7 +9,9 @@ export const MAX_DIAGRAM_LENGTH = 6000;
 
 // Source is untrusted. Mermaid can load images while building its temporary DOM,
 // before the final SVG is isolated in an <img>. Fall back to source for media.
-const EMBEDDED_MEDIA = /\bimg['"]?\s*:|<\s*(?:img|image|picture|source|svg)\b|!\[[^\]\r\n]*\]\s*\(|\burl\s*\(/i;
+// Mermaid's YAML node-metadata parser decodes backslash-escaped key names.
+// Reject escapes after @{, including an escaped img key after a quoted `}`.
+const EMBEDDED_MEDIA = /\bimg['"]?\s*:|<\s*(?:img|image|picture|source|svg)\b|!\[[^\]\r\n]*\]\s*\(|\burl\s*\(|@\{[\s\S]*\\/i;
 
 type Mermaid = (typeof import('mermaid'))['default'];
 
