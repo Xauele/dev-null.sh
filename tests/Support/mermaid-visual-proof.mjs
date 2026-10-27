@@ -46,6 +46,11 @@ async function capture(mode, width, height) {
     if (await showMore.count()) {
         await showMore.click();
     }
+    const joinDismiss = page.locator('[data-test="guest-join-sheet-dismiss"]');
+    if (width < 700 && await joinDismiss.isVisible()) {
+        await joinDismiss.click();
+    }
+
     const diagram = page.locator('[data-test="mermaid-diagram"]').first();
     await diagram.waitFor({ timeout: 30000 });
     await diagram.locator('img').waitFor({ timeout: 30000 });
@@ -56,8 +61,32 @@ async function capture(mode, width, height) {
     assert.ok(mermaidRequests.length > 0, 'Mermaid runtime must be loaded only after unfolding the diagram');
     assert.deepEqual(consoleErrors, [], 'No page runtime errors');
 
+    const svg = await image.evaluate(async (element) =>
+        (await fetch(element.src)).text(),
+    );
+    assert.match(svg, /#(?:7aa2f7|3b6fe0)/i, 'Diagram should use the dev-null primary blue');
+    assert.match(svg, /#(?:fcc419|b7791f)/i, 'Decision node should have a lane-amber stroke');
+
+    const viewport = diagram.getByRole('region', { name: 'Diagram viewport' });
+    if (width < 700) {
+        const dimensions = await viewport.evaluate((element) => ({
+            viewport: element.clientWidth,
+            content: element.scrollWidth,
+            image: element.querySelector('img').getBoundingClientRect().width,
+        }));
+        assert.ok(dimensions.image >= 580, 'Wide diagrams must not shrink below legible mobile width');
+        assert.ok(dimensions.content > dimensions.viewport + 100, 'Wide diagrams must scroll horizontally');
+        assert.ok(await diagram.getByText('Scroll to explore').isVisible());
+    }
+
     const suffix = width < 700 ? 'mobile' : 'desktop';
     await page.screenshot({ path: `evidence/mermaid/${suffix}-${mode}.png`, fullPage: true, animations: 'disabled' });
+    if (width < 700) {
+        await viewport.evaluate((element) => {
+            element.scrollLeft = element.scrollWidth;
+        });
+        await page.screenshot({ path: `evidence/mermaid/mobile-${mode}-pan.png`, fullPage: true, animations: 'disabled' });
+    }
     await diagram.getByRole('button', { name: 'Show source' }).click();
     await diagram.locator('pre').waitFor();
     assert.match(await diagram.locator('pre').textContent(), /flowchart LR/);

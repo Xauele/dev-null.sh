@@ -29,6 +29,10 @@ flowchart LR
     B -->|red| D["Fix and retry"]
     D --> B
     C --> E["Production"]
+    classDef success fill:#51cf66,fill-opacity:0.14,stroke:#51cf66,stroke-width:2px
+    classDef retry fill:#f06595,fill-opacity:0.14,stroke:#f06595,stroke-width:2px
+    class C,E success
+    class D retry
 ```
 
 The source stays copyable and works in commit previews, too.
