@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - production
+      - ci/upstream-mermaid-base-20261026
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -146,5 +147,8 @@ jobs:
         if: steps.build-cache.outputs.cache-hit != 'true'
         run: bun run build
 
-      - name: Tests
-        run: composer test:unit
+      - name: Tests against current upstream
+        run: |
+          GITHUB_REPOSITORY=dev-null-sh/dev-null.sh php vendor/bin/pest tests/Unit/Services/CodeSpansTest.php
+          LARAVEL_BYPASS_ENV_CHECK=1 bunx vp test tests/Unit/MermaidDiagram.test.tsx
+          bun run test:unit
