@@ -240,7 +240,7 @@ export function MermaidDiagram({ source }: { source: string }) {
                             }}
                         />
                     </div>
-                    <div className="flex h-8 items-center justify-between gap-0.5 border-t px-1 font-mono text-[11px] text-muted-foreground">
+                    <div className="flex h-8 items-center gap-0.5 border-t px-1 font-mono text-[11px] text-muted-foreground">
                         <span
                             className="flex items-center gap-1 pl-2 text-[10px] sm:hidden"
                             aria-hidden
@@ -252,7 +252,7 @@ export function MermaidDiagram({ source }: { source: string }) {
                                 </>
                             )}
                         </span>
-                        <div className="flex items-center gap-0.5">
+                        <div className="ml-auto flex items-center gap-0.5">
                             <button
                                 type="button"
                                 aria-label="Zoom out"
