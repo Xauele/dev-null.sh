@@ -1,6 +1,6 @@
 /**
  * Diagram colors follow resources/css/app.css:
- * blue is the site's primary action, green/purple/amber are existing lane colors.
+ * blue is the site's primary action, green/purple are existing lane colors.
  * Distinct fills are intentionally muted, with readable labels in both modes.
  */
 export type DiagramTheme = 'light' | 'dark';
@@ -15,8 +15,6 @@ const palettes = {
         secondaryBorder: '#51cf66',
         tertiary: '#30243c',
         tertiaryBorder: '#da77f2',
-        decision: '#362c1d',
-        decisionBorder: '#fcc419',
         line: '#91a2b9',
         note: '#382d1c',
         noteBorder: '#caa34a',
@@ -40,8 +38,6 @@ const palettes = {
         secondaryBorder: '#2f9e44',
         tertiary: '#f3eafa',
         tertiaryBorder: '#9c36b5',
-        decision: '#fff4dc',
-        decisionBorder: '#b7791f',
         line: '#718199',
         note: '#fff4dc',
         noteBorder: '#b7791f',
@@ -106,18 +102,3 @@ export function mermaidTheme(theme: DiagramTheme) {
     };
 }
 
-/**
- * Only default decision diamonds get an amber tint. Explicit author-supplied
- * Mermaid classes keep their own styling, so colors retain semantic meaning.
- * The CSS is embedded into the generated inert SVG, never into the host DOM.
- */
-export function mermaidThemeCSS(theme: DiagramTheme): string {
-    const palette = palettes[theme];
-
-    return [
-        '.node.default polygon {',
-        '  fill: ' + palette.decision + ' !important;',
-        '  stroke: ' + palette.decisionBorder + ' !important;',
-        '}',
-    ].join('\n');
-}

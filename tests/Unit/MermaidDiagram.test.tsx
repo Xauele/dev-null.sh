@@ -7,7 +7,8 @@ import { test } from 'vite-plus/test';
 import { CommitBody } from '../../resources/js/components/commit-body';
 import { MermaidDiagram } from '../../resources/js/components/mermaid-diagram';
 import { bodySegments } from '../../resources/js/lib/code';
-import { mermaidTheme, mermaidThemeCSS } from '../../resources/js/lib/mermaid-theme';
+import { renderMermaid } from '../../resources/js/lib/mermaid-renderer';
+import { mermaidTheme } from '../../resources/js/lib/mermaid-theme';
 
 function renderPage(content: ReactElement): string {
     return renderToStaticMarkup(
@@ -114,12 +115,30 @@ test('uses the real dev-null theme colors rather than Mermaid defaults', () => {
     }
 });
 
-test('tints only unstyled decision diamonds and keeps custom Mermaid classes intact', () => {
-    const darkCSS = mermaidThemeCSS('dark');
-    const lightCSS = mermaidThemeCSS('light');
+test('uses Mermaid base fills for both diamonds and hexagons', () => {
+    // Both shapes are polygons in Mermaid; neither should get an unconditional tint.
+    const withBothShapes = bodySegments('Before\\n' +
+        '```mermaid\\nflowchart LR\\nD{Decide?} --> H{{Prepare}}\\n```');
+    const diagram = withBothShapes.find((segment) => segment.type === 'block');
+    assert.ok(diagram && diagram.type === 'block');
+    assert.match(diagram.source ?? '', /D\\{Decide\\?\\} --> H\\{\\{Prepare\\}\\}/);
+    assert.equal(mermaidTheme('dark').primaryColor, '#202b40');
+    assert.equal(mermaidTheme('light').primaryColor, '#e8effc');
+});
 
-    assert.ok(darkCSS.includes('.node.default polygon'));
-    assert.ok(darkCSS.includes('#fcc419'));
-    assert.ok(lightCSS.includes('#b7791f'));
-    assert.ok(!darkCSS.includes('.node rect'));
+test('rejects image and remote CSS sources before Mermaid parses them', async () => {
+    const imageSources = [
+        'flowchart LR\\nA@{ img: "https://example.com/pixel.png" } --> B',
+        'flowchart LR\\nA@{\\n img : "//example.com/pixel.png"\\n}',
+        'flowchart LR\\nA["<img src=https://example.com/pixel.png>"]',
+        'flowchart LR\\nA["![pixel](https://example.com/pixel.png)"]',
+        'flowchart LR\\nclassDef danger fill:url(https://example.com/pixel.png)',
+    ];
+
+    for (const source of imageSources) {
+        await assert.rejects(
+            renderMermaid(source, 'light'),
+            /Embedded images are not supported/,
+        );
+    }
 });
