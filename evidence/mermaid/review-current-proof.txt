@@ -1,0 +1,3 @@
+Reviewed visual source: ci/mermaid-visual-20261026
+Source SHA: c7b5048a139394610420a7b4e4452c94824c10c7
+Verified E2E: https://github.com/Xauele/dev-null.sh/actions/runs/40425881054
