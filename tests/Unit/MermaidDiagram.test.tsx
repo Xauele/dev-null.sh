@@ -115,24 +115,25 @@ test('uses the real dev-null theme colors rather than Mermaid defaults', () => {
     }
 });
 
-test('uses Mermaid base fills for both diamonds and hexagons', () => {
-    // Both shapes are polygons in Mermaid; neither should get an unconditional tint.
-    const withBothShapes = bodySegments('Before\\n' +
-        '```mermaid\\nflowchart LR\\nD{Decide?} --> H{{Prepare}}\\n```');
-    const diagram = withBothShapes.find((segment) => segment.type === 'block');
+test('preserves diamond and hexagon syntax with both theme palettes', () => {
+    const source = 'flowchart LR\nD{Decide?} --> H{{Prepare}}';
+    const diagram = bodySegments('```mermaid\n' + source + '\n```')
+        .find((segment) => segment.type === 'block');
+
     assert.ok(diagram && diagram.type === 'block');
-    assert.match(diagram.source ?? '', /D\\{Decide\\?\\} --> H\\{\\{Prepare\\}\\}/);
+    assert.equal(diagram.source, source);
+    // No global polygon CSS: these shapes keep their base or explicit class colors.
     assert.equal(mermaidTheme('dark').primaryColor, '#202b40');
     assert.equal(mermaidTheme('light').primaryColor, '#e8effc');
 });
 
 test('rejects image and remote CSS sources before Mermaid parses them', async () => {
     const imageSources = [
-        'flowchart LR\\nA@{ img: "https://example.com/pixel.png" } --> B',
-        'flowchart LR\\nA@{\\n img : "//example.com/pixel.png"\\n}',
-        'flowchart LR\\nA["<img src=https://example.com/pixel.png>"]',
-        'flowchart LR\\nA["![pixel](https://example.com/pixel.png)"]',
-        'flowchart LR\\nclassDef danger fill:url(https://example.com/pixel.png)',
+        'flowchart LR\nA@{ img: "https://example.com/pixel.png" } --> B',
+        'flowchart LR\nA@{\n img : "//example.com/pixel.png"\n}',
+        'flowchart LR\nA["<img src=https://example.com/pixel.png>"]',
+        'flowchart LR\nA["![pixel](https://example.com/pixel.png)"]',
+        'flowchart LR\nclassDef danger fill:url(https://example.com/pixel.png)',
     ];
 
     for (const source of imageSources) {
