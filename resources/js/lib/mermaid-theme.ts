@@ -76,8 +76,10 @@ export function mermaidTheme(theme: DiagramTheme) {
         signalTextColor: palette.text,
         activationBkgColor: palette.secondary,
         activationBorderColor: palette.secondaryBorder,
-        fontFamily: 'Geist, ui-sans-serif, system-ui, sans-serif',
-        fontSize: '15px',
+        // SVGs shown via <img> cannot rely on the page's Geist @font-face.
+        // Use the same system font for Mermaid's layout measurements and image paint.
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '14px',
         pie1: palette.pie[0],
         pie2: palette.pie[1],
         pie3: palette.pie[2],
